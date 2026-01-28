@@ -3,6 +3,7 @@ import 'screens/dashboard_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/auth_service.dart';
+import 'screens/onboarding_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -99,7 +100,7 @@ class AuthGate extends StatelessWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        return snap.data == true ? const HomeTabs() : const LoginScreen();
+        return snap.data == true ? const HomeTabs() : const OnboardingScreen();
       },
     );
   }
