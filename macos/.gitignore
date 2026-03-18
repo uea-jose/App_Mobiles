@@ -1,7 +1,20 @@
-# Flutter-related
-**/Flutter/ephemeral/
-**/Pods/
+# Flutter
+.dart_tool/
+.build/
+build/
 
-# Xcode-related
-**/dgph
-**/xcuserdata/
+# VS Code / IntelliJ
+.idea/
+*.iml
+
+# OS
+.DS_Store
+
+# ZIP files
+*.zip
+
+# Generated
+pubspec.lock
+
+# Logs
+*.log
