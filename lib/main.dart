@@ -4,6 +4,7 @@ import 'auth_gate.dart';
 import 'ui/app_theme.dart';
 import 'screens/login_screen.dart';
 import 'screens/dashboard_screen.dart';
+
 import 'screens/onboarding_screen.dart';
 
 final GlobalKey<ScaffoldMessengerState> appMessengerKey =

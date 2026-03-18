@@ -6,9 +6,8 @@ import 'package:flutter_application_3/services/auth_service.dart';
 
 import 'package:flutter_application_3/screens/inventory_screen.dart';
 import 'package:flutter_application_3/screens/products_screen.dart';
-// Importa otros módulos cuando existan:
-// import 'sales_screen.dart';
-// import 'users_screen.dart';
+import 'package:flutter_application_3/screens/profile_screen.dart';
+import 'package:flutter_application_3/screens/users_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -31,12 +30,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   Future<void> _loadMe() async {
     try {
-      final data = await _auth.me(); // {sub, username, role, iat, exp}
+      final data = await _auth.me();
       if (!mounted) return;
-      setState(() => me = data);
+      setState(() {
+        me = data;
+        error = null;
+      });
     } catch (e) {
       if (!mounted) return;
-      setState(() => error = e.toString().replaceAll('Exception: ', ''));
+      setState(() {
+        error = e.toString().replaceAll('Exception: ', '');
+      });
     }
   }
 
@@ -44,14 +48,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
     await _auth.logout();
     if (!mounted) return;
     Navigator.popUntil(context, (r) => r.isFirst);
-    // AuthGate se encarga de mostrar Login si ya no hay token
     Navigator.pushReplacementNamed(context, '/');
   }
 
   @override
   Widget build(BuildContext context) {
     final username = (me?['username'] ?? 'Usuario').toString();
-    final role = (me?['role'] ?? 'USER').toString();
+    final role = (me?['role'] ?? 'USER').toString().toUpperCase();
 
     return Scaffold(
       body: AppBackground(
@@ -101,7 +104,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             gradient: const LinearGradient(
                               colors: [
                                 AppTheme.brandPink,
-                                AppTheme.brandOrange
+                                AppTheme.brandOrange,
                               ],
                             ),
                             onTap: () {
@@ -113,8 +116,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               );
                             },
                           ),
-
-                          // ✅ CAMBIO: ahora sí abre la pantalla Productos
                           _ModuleTile(
                             title: 'Productos',
                             subtitle: 'Catálogo',
@@ -131,7 +132,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               );
                             },
                           ),
-
                           _ModuleTile(
                             title: 'Ventas',
                             subtitle: 'Órdenes',
@@ -179,7 +179,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                     context, 'Solo ADMIN puede ver Usuarios');
                                 return;
                               }
-                              _snack(context, 'Usuarios (próximo módulo)');
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const UsersScreen(),
+                                ),
+                              );
                             },
                           ),
                         ],
@@ -192,6 +197,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     subtitle: 'Atajos para tu día a día',
                   ),
                   const SizedBox(height: 12),
+                  _QuickActionCard(
+                    icon: Icons.person_outline,
+                    title: 'Mi perfil',
+                    subtitle: 'Ver y editar datos de usuario',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 10),
                   _QuickActionCard(
                     icon: Icons.add_circle_outline,
                     title: 'Nuevo producto',
@@ -212,8 +231,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     padding: const EdgeInsets.all(16),
                     child: Row(
                       children: const [
-                        Icon(Icons.tips_and_updates_outlined,
-                            color: AppTheme.brandPink),
+                        Icon(
+                          Icons.tips_and_updates_outlined,
+                          color: AppTheme.brandPink,
+                        ),
                         SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -240,9 +261,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 }
-
-// ---------------- Widgets internos ----------------
-// (Desde aquí NO CAMBIA nada de tu código)
 
 class _TopGlassHeader extends StatelessWidget {
   final String title;
@@ -279,8 +297,10 @@ class _TopGlassHeader extends StatelessWidget {
                 ),
               ],
             ),
-            child:
-                const Icon(Icons.local_florist_outlined, color: Colors.white),
+            child: const Icon(
+              Icons.local_florist_outlined,
+              color: Colors.white,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -335,7 +355,9 @@ class _RoleChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isAdmin = role.toUpperCase() == 'ADMIN';
+    final normalizedRole = role.toUpperCase();
+    final isAdmin = normalizedRole == 'ADMIN';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
@@ -346,7 +368,7 @@ class _RoleChip extends StatelessWidget {
         ),
       ),
       child: Text(
-        role.toUpperCase(),
+        normalizedRole,
         style: TextStyle(
           fontWeight: FontWeight.w900,
           fontSize: 12,
@@ -579,11 +601,15 @@ class _QuickActionCard extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title,
-                      style: const TextStyle(fontWeight: FontWeight.w900)),
+                  Text(
+                    title,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
                   const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: const TextStyle(color: AppTheme.textMuted)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: AppTheme.textMuted),
+                  ),
                 ],
               ),
             ),

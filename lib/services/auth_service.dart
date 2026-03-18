@@ -23,7 +23,12 @@ class AuthService {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_kUser);
     if (raw == null || raw.isEmpty) return null;
-    return jsonDecode(raw) as Map<String, dynamic>;
+
+    final decoded = jsonDecode(raw);
+    if (decoded is Map<String, dynamic>) {
+      return decoded;
+    }
+    return null;
   }
 
   Future<void> logout() async {
@@ -42,22 +47,34 @@ class AuthService {
     });
 
     final token = (data['token'] ?? '').toString();
-    if (token.isEmpty) throw Exception('Token missing');
+    if (token.isEmpty) {
+      throw Exception('Token missing');
+    }
 
     final user =
         (data['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
 
+    if (user.isEmpty) {
+      throw Exception('User missing in login response');
+    }
+
+    final normalizedUser = <String, dynamic>{
+      ...user,
+      'role': (user['role'] ?? 'USER').toString().toUpperCase(),
+    };
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kToken, token);
-    await prefs.setString(_kUser, jsonEncode(user));
+    await prefs.setString(_kUser, jsonEncode(normalizedUser));
 
-    return user;
+    return normalizedUser;
   }
 
   Future<Map<String, dynamic>> register({
     required String username,
     required String password,
     String? fullName,
+    String? city,
     String role = 'USER',
     String? adminKey,
   }) async {
@@ -72,39 +89,59 @@ class AuthService {
         'fullName': fullName.trim(),
       if (adminKey != null && adminKey.trim().isNotEmpty)
         'adminKey': adminKey.trim(),
+      if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
     };
 
     final data = await _api.post('/api/auth/register', body: body);
 
     final token = (data['token'] ?? '').toString();
     if (token.isEmpty) {
-      // En tu backend actual SIEMPRE retorna token, pero lo dejamos robusto
       throw Exception('Register succeeded but token missing');
     }
 
     final user =
         (data['user'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
 
-    // Auto-login
+    if (user.isEmpty) {
+      throw Exception('User missing in register response');
+    }
+
+    final normalizedUser = <String, dynamic>{
+      ...user,
+      'role': (user['role'] ?? 'USER').toString().toUpperCase(),
+    };
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kToken, token);
-    await prefs.setString(_kUser, jsonEncode(user));
+    await prefs.setString(_kUser, jsonEncode(normalizedUser));
 
-    return user;
+    return normalizedUser;
   }
 
   Future<Map<String, dynamic>> me() async {
     final token = await getToken();
-    if (token == null || token.isEmpty) throw Exception('No token');
+    if (token == null || token.isEmpty) {
+      throw Exception('No token');
+    }
 
     final data = await _api.get('/api/me', token: token);
-    final me =
-        (data['me'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
 
-    // cache del perfil (incluye role)
+    final user = (data['user'] as Map?)?.cast<String, dynamic>() ??
+        (data['me'] as Map?)?.cast<String, dynamic>() ??
+        <String, dynamic>{};
+
+    if (user.isEmpty) {
+      throw Exception('No se pudo cargar el perfil');
+    }
+
+    final normalizedUser = <String, dynamic>{
+      ...user,
+      'role': (user['role'] ?? 'USER').toString().toUpperCase(),
+    };
+
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kUser, jsonEncode(me));
+    await prefs.setString(_kUser, jsonEncode(normalizedUser));
 
-    return me;
+    return normalizedUser;
   }
 }

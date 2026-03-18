@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_application_3/screens/register_screen.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 
 import '../services/auth_service.dart';
 import '../ui/app_theme.dart';
 import '../ui/app_widgets.dart';
 import '../utils/validators.dart';
 import 'dashboard_screen.dart';
-import 'register_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -21,11 +21,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   final _fullNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _adminKeyCtrl = TextEditingController();
 
   bool _loading = false;
+  bool _loadingLocation = false;
   String? _error;
 
   String _role = 'USER';
@@ -34,10 +36,106 @@ class _RegisterScreenState extends State<RegisterScreen> {
   void dispose() {
     _fullNameCtrl.dispose();
     _usernameCtrl.dispose();
+    _cityCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     _adminKeyCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _detectCity() async {
+    if (_loadingLocation) return;
+
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _loadingLocation = true;
+      _error = null;
+    });
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        setState(() {
+          _error =
+              'El GPS está desactivado. Puedes escribir tu ciudad manualmente.';
+        });
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _error =
+              'Permiso de ubicación denegado. Puedes escribir tu ciudad manualmente.';
+        });
+        return;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() {
+          _error =
+              'Permiso denegado permanentemente. Actívalo en configuración o escribe tu ciudad manualmente.';
+        });
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isEmpty) {
+        setState(() {
+          _error = 'No se pudo detectar tu ciudad automáticamente.';
+        });
+        return;
+      }
+
+      final place = placemarks.first;
+
+      final city = [
+        place.locality,
+        place.subAdministrativeArea,
+        place.administrativeArea,
+      ]
+          .where((e) => e != null && e.trim().isNotEmpty)
+          .map((e) => e!.trim())
+          .fold<String>('', (prev, element) => prev.isEmpty ? element : prev);
+
+      if (city.isEmpty) {
+        setState(() {
+          _error = 'No se pudo detectar tu ciudad automáticamente.';
+        });
+        return;
+      }
+
+      setState(() {
+        _cityCtrl.text = city;
+      });
+    } catch (e) {
+      setState(() {
+        _error =
+            'No se pudo obtener la ubicación. Escribe tu ciudad manualmente.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingLocation = false;
+        });
+      }
+    }
   }
 
   Future<void> _submit() async {
@@ -56,13 +154,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
         fullName: _fullNameCtrl.text.trim().isEmpty
             ? null
             : _fullNameCtrl.text.trim(),
+        city: _cityCtrl.text.trim().isEmpty ? null : _cityCtrl.text.trim(),
         role: _role,
         adminKey: _role == 'ADMIN' ? _adminKeyCtrl.text.trim() : null,
       );
 
       if (!mounted) return;
 
-      // register hace auto-login si backend devuelve token
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const DashboardScreen()),
@@ -70,7 +168,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     } catch (e) {
       setState(() => _error = e.toString().replaceAll('Exception: ', ''));
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -118,12 +218,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           style: TextStyle(color: AppTheme.textMuted),
                         ),
                         const SizedBox(height: 18),
-
-                        // Nombre (opcional)
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Nombre (opcional)',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            'Nombre (opcional)',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -131,12 +231,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: 14),
-
-                        // Usuario
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Usuario',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            'Usuario',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -145,12 +245,48 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validator: Validators.username,
                         ),
                         const SizedBox(height: 14),
-
-                        // Rol
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Rol',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            'Ciudad',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _cityCtrl,
+                          textInputAction: TextInputAction.next,
+                          decoration: InputDecoration(
+                            hintText: _loadingLocation
+                                ? 'Detectando ciudad...'
+                                : 'Ingresa tu ciudad',
+                            suffixIcon: _loadingLocation
+                                ? const Padding(
+                                    padding: EdgeInsets.all(12),
+                                    child: SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Usar mi ubicación actual',
+                                    icon: const Icon(Icons.my_location),
+                                    onPressed: _loading ? null : _detectCity,
+                                  ),
+                          ),
+                          validator: (value) =>
+                              Validators.requiredField(value, field: 'Ciudad'),
+                        ),
+                        const SizedBox(height: 14),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Rol',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         const SizedBox(height: 8),
                         _RoleSelector(
@@ -165,8 +301,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 },
                         ),
                         const SizedBox(height: 14),
-
-                        // Código admin (solo si elige ADMIN)
                         if (_role == 'ADMIN') ...[
                           const Align(
                             alignment: Alignment.centerLeft,
@@ -181,18 +315,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             textInputAction: TextInputAction.next,
                             validator: (v) {
                               if (_role != 'ADMIN') return null;
-                              return Validators.requiredField(v,
-                                  field: 'Código admin');
+                              return Validators.requiredField(
+                                v,
+                                field: 'Código admin',
+                              );
                             },
                           ),
                           const SizedBox(height: 14),
                         ],
-
-                        // Password
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Contraseña',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            'Contraseña',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -202,12 +338,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           validator: Validators.password,
                         ),
                         const SizedBox(height: 14),
-
-                        // Confirm
                         const Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Confirmar contraseña',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          child: Text(
+                            'Confirmar contraseña',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         const SizedBox(height: 6),
                         TextFormField(
@@ -219,7 +355,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           onFieldSubmitted: (_) => _submit(),
                         ),
                         const SizedBox(height: 16),
-
                         if (_error != null) ...[
                           Container(
                             width: double.infinity,
@@ -227,8 +362,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             decoration: BoxDecoration(
                               color: const Color(0xFFFFF1F2),
                               borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: const Color(0xFFFFCDD5)),
+                              border: Border.all(
+                                color: const Color(0xFFFFCDD5),
+                              ),
                             ),
                             child: Text(
                               _error!,
@@ -240,13 +376,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           const SizedBox(height: 12),
                         ],
-
                         GradientButton(
                           text: 'Registrar',
                           loading: _loading,
                           onPressed: _loading ? null : _submit,
                         ),
-
                         const SizedBox(height: 10),
                         TextButton(
                           onPressed:
@@ -265,8 +399,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 }
-
-class confirmPassword {}
 
 class _RoleSelector extends StatelessWidget {
   final String value;
@@ -303,8 +435,11 @@ class _RoleChip extends StatelessWidget {
   final bool selected;
   final VoidCallback? onTap;
 
-  const _RoleChip(
-      {required this.label, required this.selected, required this.onTap});
+  const _RoleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -318,8 +453,9 @@ class _RoleChip extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-                color: selected ? AppTheme.brandPink : const Color(0xFFE6E8F0),
-                width: selected ? 2 : 1),
+              color: selected ? AppTheme.brandPink : const Color(0xFFE6E8F0),
+              width: selected ? 2 : 1,
+            ),
             color: selected ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFF),
           ),
           child: Row(

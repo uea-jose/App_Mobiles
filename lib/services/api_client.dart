@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class ApiClient {
-  // Android emulator: 10.0.2.2
-  static const String baseUrl = 'http://10.0.2.2:3000';
+  //static const String baseUrl = 'http://10.0.2.2:3000';
+  static String baseUrl = 'http://192.168.100.229:3000';
 
   Future<Map<String, dynamic>> get(
     String path, {
@@ -36,6 +36,20 @@ class ApiClient {
   }) async {
     final uri = Uri.parse('$baseUrl$path');
     final resp = await http.put(
+      uri,
+      headers: _headers(token),
+      body: jsonEncode(body ?? {}),
+    );
+    return _handle(resp);
+  }
+
+  Future<Map<String, dynamic>> patch(
+    String path, {
+    String? token,
+    Map<String, dynamic>? body,
+  }) async {
+    final uri = Uri.parse('$baseUrl$path');
+    final resp = await http.patch(
       uri,
       headers: _headers(token),
       body: jsonEncode(body ?? {}),
