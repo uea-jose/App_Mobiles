@@ -1,5 +1,6 @@
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/brand.dart';
 import '../models/product_dto.dart';
@@ -26,6 +27,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   final _perfumeOptionsService = PerfumeOptionsService();
   final _formKey = GlobalKey<FormState>();
   late final FixedExtentScrollController _galleryController;
+  final _perfumeSearchController = TextEditingController();
 
   final _sku = TextEditingController();
   final _name = TextEditingController();
@@ -39,6 +41,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   bool _saving = false;
   String? _error;
   int _galleryPageIndex = 0;
+  String _perfumeSearch = '';
+  String? _selectionMessage;
+  bool _usingMockPerfumes = false;
 
   bool _loadingBrands = true;
   String? _brandsError;
@@ -168,6 +173,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         _selectedPerfumeOption = null;
         _loadingPerfumeOptions = false;
         _perfumeOptionsError = null;
+        _usingMockPerfumes = false;
       });
     } catch (e) {
       if (!mounted) return;
@@ -180,9 +186,63 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     }
   }
 
+  void _loadMockPerfumeOptions() {
+    setState(() {
+      _perfumeOptions = const [
+        PerfumeOption(
+          id: 'mock-1',
+          name: 'Sauvage Elixir',
+          brand: 'Dior',
+          gender: 'MASCULINO',
+          description: 'Amaderado especiado intenso.',
+          sku: 'DIOR-SAU-ELX',
+          imageUrl:
+              'https://images.unsplash.com/photo-1594035910387-fea47794261f?w=600',
+        ),
+        PerfumeOption(
+          id: 'mock-2',
+          name: 'J\'adore Eau de Parfum',
+          brand: 'Dior',
+          gender: 'FEMENINO',
+          description: 'Floral elegante y brillante.',
+          sku: 'DIOR-JAD-EDP',
+          imageUrl:
+              'https://images.unsplash.com/photo-1541643600914-78b084683601?w=600',
+        ),
+        PerfumeOption(
+          id: 'mock-3',
+          name: 'La Vie Est Belle',
+          brand: 'Lancôme',
+          gender: 'FEMENINO',
+          description: 'Dulce gourmand con iris.',
+          sku: 'LAN-LVEB-EDP',
+          imageUrl:
+              'https://images.unsplash.com/photo-1615634262417-58f34b6f9c76?w=600',
+        ),
+        PerfumeOption(
+          id: 'mock-4',
+          name: 'Acqua di Giò Profondo',
+          brand: 'Armani',
+          gender: 'MASCULINO',
+          description: 'Aromático marino moderno.',
+          sku: 'ARM-ADGP-EDP',
+          imageUrl:
+              'https://images.unsplash.com/photo-1585386959984-a4155224a1ad?w=600',
+        ),
+      ];
+      _perfumeOptionsError = null;
+      _loadingPerfumeOptions = false;
+      _usingMockPerfumes = true;
+      _galleryPageIndex = 0;
+      _selectedPerfumeOption = null;
+    });
+    _syncGalleryPosition(0);
+  }
+
   @override
   void dispose() {
     _galleryController.dispose();
+    _perfumeSearchController.dispose();
     _sku.dispose();
     _name.dispose();
     _price.dispose();
@@ -251,7 +311,12 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       return optionBrand.isNotEmpty && optionBrand == selectedBrandName;
     }).toList();
 
-    return filtered;
+    final query = _perfumeSearch.trim().toLowerCase();
+    if (query.isEmpty) return filtered;
+
+    return filtered
+        .where((option) => option.name.toLowerCase().contains(query))
+        .toList();
   }
 
   void _applyPerfumeOption(PerfumeOption option) {
@@ -276,8 +341,20 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       if (normalizedGender != null) {
         _gender = normalizedGender;
       }
+
+      _selectionMessage = 'Seleccionado: ${option.name}';
     });
+
+    HapticFeedback.selectionClick();
   }
+
+  int get _currentStep {
+    if (_selectedBrand == null) return 1;
+    if (_selectedPerfumeOption == null) return 2;
+    return 4;
+  }
+
+  bool get _isCarouselEnabled => _selectedBrand != null;
 
   Future<void> _openCreateBrandModal() async {
     final formKey = GlobalKey<FormState>();
@@ -534,145 +611,97 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     final imageUrls = _imageUrlCandidates(option.imageUrl ?? '');
 
     return Center(
-      child: AnimatedContainer(
-        key: ValueKey('wheel-item-${option.id}-$isSelected'),
+      child: AnimatedOpacity(
         duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOut,
-        width: isSelected ? 92 : 68,
-        height: isSelected ? 92 : 68,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(isSelected ? 18 : 12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isSelected ? 0.10 : 0.04),
-              blurRadius: isSelected ? 18 : 8,
-              offset: const Offset(0, 6),
-            ),
-          ],
-          border: Border.all(
-            color:
-                isSelected ? const Color(0xFFFF4D8D) : const Color(0xFFE5E7EB),
-            width: isSelected ? 2 : 1,
-          ),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(isSelected ? 16 : 11),
-          child: imageUrls.isNotEmpty
-              ? _ResilientNetworkImage(
-                  key: ValueKey('wheel-image-${option.id}'),
-                  imageUrls: imageUrls,
-                  fit: BoxFit.cover,
-                  filterQuality: FilterQuality.medium,
-                  loading: const DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Color(0xFFF9FAFB), Color(0xFFF3F4F6)],
-                      ),
+        opacity: isSelected ? 1 : 0.55,
+        child: AnimatedScale(
+          duration: const Duration(milliseconds: 220),
+          scale: isSelected ? 1 : 0.94,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedContainer(
+                key: ValueKey('wheel-item-${option.id}-$isSelected'),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                width: isSelected ? 86 : 72,
+                height: isSelected ? 86 : 72,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(isSelected ? 18 : 12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black
+                          .withValues(alpha: isSelected ? 0.10 : 0.04),
+                      blurRadius: isSelected ? 18 : 8,
+                      offset: const Offset(0, 6),
                     ),
-                    child: Center(
-                      child: SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
+                  ],
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFFFF4D8D)
+                        : const Color(0xFFE5E7EB),
+                    width: isSelected ? 2 : 1,
                   ),
-                  fallback: Container(
-                    color: const Color(0xFFF9FAFB),
-                    alignment: Alignment.center,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.image_not_supported_outlined,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(isSelected ? 16 : 11),
+                  child: imageUrls.isNotEmpty
+                      ? _ResilientNetworkImage(
+                          key: ValueKey('wheel-image-${option.id}'),
+                          imageUrls: imageUrls,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.medium,
+                          loading: const DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [Color(0xFFF9FAFB), Color(0xFFF3F4F6)],
+                              ),
+                            ),
+                            child: Center(
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          ),
+                          fallback: const Icon(
+                            Icons.image_not_supported_outlined,
+                            size: 24,
+                            color: Color(0xFF9CA3AF),
+                          ),
+                        )
+                      : const Icon(
+                          Icons.local_mall_outlined,
                           size: 24,
                           color: Color(0xFF9CA3AF),
                         ),
-                        const SizedBox(height: 4),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          child: Text(
-                            option.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF6B7280),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                )
-              : Container(
-                  color: const Color(0xFFF9FAFB),
-                  alignment: Alignment.center,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6),
-                    child: Text(
-                      option.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B7280),
-                      ),
-                    ),
-                  ),
                 ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPerfumeThumbnail(
-    PerfumeOption option, {
-    double size = 40,
-    double radius = 10,
-  }) {
-    final imageUrls = _imageUrlCandidates(option.imageUrl ?? '');
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius - 1),
-        child: imageUrls.isNotEmpty
-            ? _ResilientNetworkImage(
-                key: ValueKey('thumb-image-${option.id}-$size-$radius'),
-                imageUrls: imageUrls,
-                fit: BoxFit.cover,
-                loading: const Center(
-                  child: SizedBox(
-                    width: 16,
-                    height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-                fallback: const Icon(
-                  Icons.local_mall_outlined,
-                  size: 18,
-                  color: Color(0xFF9CA3AF),
-                ),
-              )
-            : const Icon(
-                Icons.local_mall_outlined,
-                size: 18,
-                color: Color(0xFF9CA3AF),
               ),
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  option.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: isSelected ? 12 : 11,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected
+                        ? const Color(0xFF111827)
+                        : const Color(0xFF6B7280),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -750,6 +779,361 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     }
   }
 
+  Widget _buildStepContainer({
+    required String title,
+    required String subtitle,
+    required int step,
+    required bool enabled,
+    required Widget child,
+  }) {
+    final active = _currentStep >= step;
+    final current = _currentStep == step;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: enabled ? Colors.white : const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: current
+              ? const Color(0xFFFF4D8D)
+              : active
+                  ? const Color(0xFFFACFE0)
+                  : const Color(0xFFE5E7EB),
+          width: current ? 1.8 : 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 13,
+                backgroundColor:
+                    active ? const Color(0xFFFF4D8D) : const Color(0xFFE5E7EB),
+                child: Text(
+                  '$step',
+                  style: TextStyle(
+                    color: active ? Colors.white : const Color(0xFF6B7280),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                current
+                    ? Icons.play_circle_outline_rounded
+                    : active
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                color: current
+                    ? const Color(0xFFFF4D8D)
+                    : active
+                        ? const Color(0xFF16A34A)
+                        : const Color(0xFF9CA3AF),
+                size: 18,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          IgnorePointer(
+            ignoring: !enabled,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 160),
+              opacity: enabled ? 1 : 0.55,
+              child: child,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentStepIndicator() {
+    const totalSteps = 4;
+    final progress = (_currentStep / totalSteps).clamp(0.0, 1.0);
+    const labels = ['Marca', 'Perfume', 'Vista previa', 'Datos'];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Paso actual: $_currentStep de $totalSteps',
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF374151),
+            ),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress,
+              minHeight: 7,
+              backgroundColor: const Color(0xFFF3F4F6),
+              valueColor: const AlwaysStoppedAnimation(Color(0xFFFF4D8D)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: List.generate(labels.length, (index) {
+              final step = index + 1;
+              final isCurrent = step == _currentStep;
+              final isDone = step < _currentStep;
+
+              return Chip(
+                avatar: Icon(
+                  isDone
+                      ? Icons.check_rounded
+                      : isCurrent
+                          ? Icons.play_arrow_rounded
+                          : Icons.circle_outlined,
+                  size: 16,
+                  color: isCurrent
+                      ? const Color(0xFFFF4D8D)
+                      : isDone
+                          ? const Color(0xFF16A34A)
+                          : const Color(0xFF9CA3AF),
+                ),
+                label: Text(
+                  '$step. ${labels[index]}',
+                  style: TextStyle(
+                    fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600,
+                    color: isCurrent
+                        ? const Color(0xFF111827)
+                        : const Color(0xFF6B7280),
+                  ),
+                ),
+                side: BorderSide(
+                  color: isCurrent
+                      ? const Color(0xFFFACFE0)
+                      : const Color(0xFFE5E7EB),
+                ),
+                backgroundColor: isCurrent
+                    ? const Color(0xFFFFF1F6)
+                    : const Color(0xFFFFFFFF),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPerfumeStepContent(List<PerfumeOption> visiblePerfumeOptions) {
+    if (!_isCarouselEnabled) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: const Text(
+          'Selecciona una casa fabricante para habilitar el carrusel.',
+          style: TextStyle(
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    }
+
+    Widget body;
+    if (_loadingPerfumeOptions) {
+      body = const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: LinearProgressIndicator(),
+      );
+    } else if (_perfumeOptionsError != null) {
+      body = Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'No se pudieron cargar sugerencias de perfumes.',
+            style: TextStyle(
+              color: Color(0xFF9F1239),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _perfumeOptionsError!,
+            style: const TextStyle(
+              color: Color(0xFF9F1239),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _loadPerfumeOptions,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Reintentar'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: _loadMockPerfumeOptions,
+                  icon: const Icon(Icons.data_object),
+                  label: const Text('Usar mock'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } else if (visiblePerfumeOptions.isEmpty) {
+      body = Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFE5E7EB),
+          ),
+        ),
+        child: Text(
+          _perfumeSearch.trim().isEmpty
+              ? 'No hay perfumes disponibles para esta marca.'
+              : 'No hay resultados para "${_perfumeSearch.trim()}".',
+          style: const TextStyle(
+            color: Color(0xFF6B7280),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      );
+    } else {
+      body = Column(
+        children: [
+          SizedBox(
+            height: 186,
+            child: ListWheelScrollView.useDelegate(
+              controller: _galleryController,
+              itemExtent: 112,
+              diameterRatio: 1.6,
+              useMagnifier: true,
+              magnification: 1.09,
+              overAndUnderCenterOpacity: 0.35,
+              squeeze: 0.95,
+              physics: const FixedExtentScrollPhysics(),
+              onSelectedItemChanged: (newIndex) {
+                setState(() {
+                  _galleryPageIndex = newIndex;
+                });
+
+                if (newIndex < visiblePerfumeOptions.length) {
+                  _applyPerfumeOption(visiblePerfumeOptions[newIndex]);
+                }
+              },
+              childDelegate: ListWheelChildBuilderDelegate(
+                childCount: visiblePerfumeOptions.length,
+                builder: (context, index) {
+                  final option = visiblePerfumeOptions[index];
+                  return _buildWheelItem(
+                    option,
+                    isSelected: index == _galleryPageIndex,
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Text(
+              '${_galleryPageIndex + 1} de ${visiblePerfumeOptions.length}',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6B7280),
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _perfumeSearchController,
+          onChanged: (value) {
+            setState(() {
+              _perfumeSearch = value;
+              _galleryPageIndex = 0;
+              _selectedPerfumeOption = null;
+            });
+            _syncGalleryPosition(0);
+          },
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search),
+            labelText: 'Buscar perfume en la marca',
+          ),
+        ),
+        if (_usingMockPerfumes) ...[
+          const SizedBox(height: 8),
+          const Text(
+            'Mostrando datos mock de ejemplo',
+            style: TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        body,
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final imagePreviewUrl =
@@ -788,53 +1172,274 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                 child: Form(
                   key: _formKey,
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       if (!_isEdit) ...[
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Casa fabricante',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF374151),
-                            ),
-                          ),
+                        _buildCurrentStepIndicator(),
+                        const SizedBox(height: 12),
+                        _buildStepContainer(
+                          step: 1,
+                          enabled: true,
+                          title: 'Casa fabricante',
+                          subtitle: 'Elige la marca para filtrar perfumes',
+                          child: _loadingBrands
+                              ? const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 8),
+                                  child: LinearProgressIndicator(),
+                                )
+                              : _brandsError != null
+                                  ? Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        Text(
+                                          _brandsError!,
+                                          style: const TextStyle(
+                                            color: Color(0xFF9F1239),
+                                            fontWeight: FontWeight.w800,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        ElevatedButton.icon(
+                                          onPressed: () {
+                                            setState(() {
+                                              _loadingBrands = true;
+                                              _brandsError = null;
+                                            });
+                                            _loadBrands();
+                                          },
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text(
+                                            'Reintentar cargar casas',
+                                          ),
+                                        ),
+                                      ],
+                                    )
+                                  : Column(
+                                      children: [
+                                        DropdownSearch<Brand>(
+                                          items: _brands,
+                                          selectedItem: _selectedBrand,
+                                          compareFn: (item, selected) =>
+                                              item.id == selected.id,
+                                          itemAsString: (Brand b) {
+                                            final country =
+                                                (b.country ?? '').trim();
+                                            return country.isEmpty
+                                                ? b.name
+                                                : '${b.name} • $country';
+                                          },
+                                          popupProps: const PopupProps.menu(
+                                            showSearchBox: true,
+                                            searchFieldProps: TextFieldProps(
+                                              decoration: InputDecoration(
+                                                hintText:
+                                                    'Buscar casa fabricante',
+                                              ),
+                                            ),
+                                          ),
+                                          dropdownDecoratorProps:
+                                              const DropDownDecoratorProps(
+                                            dropdownSearchDecoration:
+                                                InputDecoration(
+                                              labelText: 'Casa fabricante *',
+                                              border: OutlineInputBorder(),
+                                            ),
+                                          ),
+                                          onChanged: (Brand? b) {
+                                            final changed =
+                                                _selectedBrand?.id != b?.id;
+
+                                            setState(() {
+                                              _selectedBrand = b;
+                                              _perfumeSearch = '';
+                                              _perfumeSearchController.clear();
+                                            });
+
+                                            if (changed) {
+                                              setState(() {
+                                                _selectedPerfumeOption = null;
+                                                _galleryPageIndex = 0;
+                                                _imageUrl.clear();
+                                                _selectionMessage = b == null
+                                                    ? null
+                                                    : 'Marca ${b.name} seleccionada. Elige un perfume.';
+                                              });
+                                              _syncGalleryPosition(0);
+                                              if (b != null) {
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                  SnackBar(
+                                                    content: Text(
+                                                      'Mostrando perfumes de ${b.name}',
+                                                    ),
+                                                  ),
+                                                );
+                                              }
+                                            }
+                                          },
+                                          validator: (Brand? b) {
+                                            if (b == null) {
+                                              return 'Selecciona una casa fabricante';
+                                            }
+                                            return null;
+                                          },
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            const Spacer(),
+                                            TextButton.icon(
+                                              onPressed: _saving
+                                                  ? null
+                                                  : _openCreateBrandModal,
+                                              icon: const Icon(
+                                                Icons.add_business_outlined,
+                                              ),
+                                              label: const Text(
+                                                'Agregar casa fabricante',
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
                         ),
-                        const SizedBox(height: 8),
-                        if (_loadingBrands)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: LinearProgressIndicator(),
-                          )
-                        else if (_brandsError != null)
-                          Column(
+                        const SizedBox(height: 12),
+                        _buildStepContainer(
+                          step: 2,
+                          enabled: _selectedBrand != null,
+                          title: 'Seleccionar perfume',
+                          subtitle:
+                              'Carrusel vertical filtrado por marca seleccionada',
+                          child:
+                              _buildPerfumeStepContent(visiblePerfumeOptions),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildStepContainer(
+                          step: 3,
+                          enabled: true,
+                          title: 'Vista previa',
+                          subtitle:
+                              'Imagen y nombre se actualizan automáticamente',
+                          child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              Text(
-                                _brandsError!,
-                                style: const TextStyle(
-                                  color: Color(0xFF9F1239),
-                                  fontWeight: FontWeight.w800,
+                              AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 280),
+                                switchInCurve: Curves.easeOut,
+                                child: ClipRRect(
+                                  key: ValueKey(
+                                    _selectedPerfumeOption?.id ??
+                                        'preview-empty',
+                                  ),
+                                  borderRadius: BorderRadius.circular(16),
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 220,
+                                    color: Colors.white,
+                                    child: selectedPreviewUrls.isNotEmpty
+                                        ? _ResilientNetworkImage(
+                                            key: ValueKey(
+                                              'hero-${_selectedPerfumeOption?.id ?? imagePreviewUrl}',
+                                            ),
+                                            imageUrls: selectedPreviewUrls,
+                                            fit: BoxFit.contain,
+                                            filterQuality: FilterQuality.high,
+                                            loading: const Center(
+                                              child:
+                                                  CircularProgressIndicator(),
+                                            ),
+                                            fallback: const Center(
+                                              child: Icon(
+                                                Icons
+                                                    .image_not_supported_outlined,
+                                                size: 64,
+                                                color: Color(0xFFD1D5DB),
+                                              ),
+                                            ),
+                                          )
+                                        : const Center(
+                                            child: Icon(
+                                              Icons.local_mall_outlined,
+                                              size: 64,
+                                              color: Color(0xFFD1D5DB),
+                                            ),
+                                          ),
+                                  ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                              ElevatedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _loadingBrands = true;
-                                    _brandsError = null;
-                                  });
-                                  _loadBrands();
-                                },
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Reintentar cargar casas'),
+                              const SizedBox(height: 10),
+                              Text(
+                                _selectedPerfumeOption?.name ??
+                                    'Sin perfume seleccionado',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF111827),
+                                ),
                               ),
+                              if (_selectionMessage != null) ...[
+                                const SizedBox(height: 6),
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 180),
+                                  child: Text(
+                                    _selectionMessage!,
+                                    key: ValueKey(_selectionMessage),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      color: Color(0xFF16A34A),
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ],
-                          )
-                        else
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _buildStepContainer(
+                        step: _isEdit ? 1 : 4,
+                        enabled: true,
+                        title: 'Datos del producto',
+                        subtitle: 'Completa y valida antes de guardar',
+                        child: Column(
+                          children: [
+                            if (_isEdit && _loadingBrands)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 8),
+                                child: LinearProgressIndicator(),
+                              )
+                            else if (_isEdit && _brandsError != null)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    _brandsError!,
+                                    style: const TextStyle(
+                                      color: Color(0xFF9F1239),
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ElevatedButton.icon(
+                                    onPressed: () {
+                                      setState(() {
+                                        _loadingBrands = true;
+                                        _brandsError = null;
+                                      });
+                                      _loadBrands();
+                                    },
+                                    icon: const Icon(Icons.refresh),
+                                    label:
+                                        const Text('Reintentar cargar casas'),
+                                  ),
+                                ],
+                              )
+                            else if (_isEdit) ...[
                               DropdownSearch<Brand>(
                                 items: _brands,
                                 selectedItem: _selectedBrand,
@@ -848,11 +1453,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 },
                                 popupProps: const PopupProps.menu(
                                   showSearchBox: true,
-                                  searchFieldProps: TextFieldProps(
-                                    decoration: InputDecoration(
-                                      hintText: 'Buscar casa fabricante',
-                                    ),
-                                  ),
                                 ),
                                 dropdownDecoratorProps:
                                     const DropDownDecoratorProps(
@@ -862,20 +1462,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                   ),
                                 ),
                                 onChanged: (Brand? b) {
-                                  final changed = _selectedBrand?.id != b?.id;
-
                                   setState(() {
                                     _selectedBrand = b;
                                   });
-
-                                  if (changed) {
-                                    setState(() {
-                                      _selectedPerfumeOption = null;
-                                      _galleryPageIndex = 0;
-                                      _imageUrl.clear();
-                                    });
-                                    _syncGalleryPosition(0);
-                                  }
                                 },
                                 validator: (Brand? b) {
                                   if (b == null) {
@@ -890,492 +1479,127 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                   const Spacer(),
                                   TextButton.icon(
                                     onPressed:
-                                      _saving ? null : _openCreateBrandModal,
+                                        _saving ? null : _openCreateBrandModal,
                                     icon:
                                         const Icon(Icons.add_business_outlined),
-                                    label: const Text(
-                                      'Agregar casa fabricante',
-                                    ),
+                                    label:
+                                        const Text('Agregar casa fabricante'),
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 10),
                             ],
-                          ),
-                        const SizedBox(height: 8),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Perfume (opcional)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF374151),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        if (_selectedBrand == null)
-                          DropdownSearch<PerfumeOption>(
-                            items: const [],
-                            selectedItem: null,
-                            enabled: false,
-                            itemAsString: (PerfumeOption p) => p.name,
-                            popupProps: const PopupProps.menu(
-                              showSearchBox: true,
-                            ),
-                            dropdownDecoratorProps:
-                                const DropDownDecoratorProps(
-                              dropdownSearchDecoration: InputDecoration(
-                                labelText: 'Perfume sugerido (opcional)',
-                                hintText:
-                                    'Primero elige una casa fabricante',
+                            TextFormField(
+                              controller: _name,
+                              decoration: const InputDecoration(
+                                labelText: 'Nombre del producto *',
                               ),
-                            ),
-                          )
-                        else if (_loadingPerfumeOptions)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 8),
-                            child: LinearProgressIndicator(),
-                          )
-                        else if (_perfumeOptionsError != null)
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              const Text(
-                                'No se pudieron cargar sugerencias de perfumes.',
-                                style: TextStyle(
-                                  color: Color(0xFF9F1239),
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _perfumeOptionsError!,
-                                style: const TextStyle(
-                                  color: Color(0xFF9F1239),
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              OutlinedButton.icon(
-                                onPressed: _loadPerfumeOptions,
-                                icon: const Icon(Icons.refresh),
-                                label: const Text('Reintentar sugerencias'),
-                              ),
-                            ],
-                          )
-                        else if (visiblePerfumeOptions.isEmpty)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: const Text(
-                              'No hay perfumes sugeridos para esta casa. Puedes ingresar los datos manualmente.',
-                              style: TextStyle(
-                                color: Color(0xFF6B7280),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          )
-                        else
-                          DropdownSearch<PerfumeOption>(
-                            items: visiblePerfumeOptions,
-                            selectedItem: _selectedPerfumeOption,
-                            compareFn: (item, selected) =>
-                                (item.id) == (selected.id),
-                            itemAsString: (PerfumeOption p) => p.name,
-                            dropdownBuilder: (context, selectedItem) {
-                              if (selectedItem == null) {
-                                return const Text('Selecciona un perfume');
-                              }
-
-                              final selectedOption = selectedItem;
-
-                              return Row(
-                                children: [
-                                  _buildPerfumeThumbnail(selectedOption),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      selectedOption.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              );
-                            },
-                            popupProps: PopupProps.menu(
-                              showSearchBox: true,
-                              itemBuilder: (context, item, isSelected) {
-                                final option = item;
-                                return ListTile(
-                                  dense: true,
-                                  leading: _buildPerfumeThumbnail(
-                                    option,
-                                    size: 36,
-                                    radius: 8,
-                                  ),
-                                  title: Text(
-                                    option.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              },
-                            ),
-                            dropdownDecoratorProps:
-                                const DropDownDecoratorProps(
-                              dropdownSearchDecoration: InputDecoration(
-                                labelText: 'Perfume sugerido (opcional)',
-                                hintText:
-                                    'Busca por nombre (autocompleta datos)',
-                              ),
-                            ),
-                            onChanged: (PerfumeOption? option) {
-                              if (option == null) return;
-
-                              final idx = visiblePerfumeOptions.indexWhere(
-                                (item) => item.id == option.id,
-                              );
-                              if (idx >= 0) {
-                                setState(() {
-                                  _galleryPageIndex = idx;
-                                });
-                                _syncGalleryPosition(idx);
-                              }
-
-                              _applyPerfumeOption(option);
-                            },
-                          ),
-                        if (_selectedBrand != null &&
-                          visiblePerfumeOptions.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 300),
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: ScaleTransition(
-                                  scale: Tween<double>(begin: 0.95, end: 1.0)
-                                      .animate(animation),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: ClipRRect(
-                              key: ValueKey(
-                                _selectedPerfumeOption?.id ?? 'placeholder',
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                width: double.infinity,
-                                height: 220,
-                                color: Colors.white,
-                                child: selectedPreviewUrls.isNotEmpty
-                                    ? _ResilientNetworkImage(
-                                        key: ValueKey(
-                                          'hero-${_selectedPerfumeOption?.id ?? imagePreviewUrl}',
-                                        ),
-                                        imageUrls: selectedPreviewUrls,
-                                        fit: BoxFit.contain,
-                                        filterQuality: FilterQuality.high,
-                                        loading: const Center(
-                                          child: CircularProgressIndicator(),
-                                        ),
-                                        fallback: const Center(
-                                          child: Icon(
-                                            Icons.image_not_supported_outlined,
-                                            size: 64,
-                                            color: Color(0xFFD1D5DB),
-                                          ),
-                                        ),
-                                      )
-                                    : const Center(
-                                        child: Icon(
-                                          Icons.local_mall_outlined,
-                                          size: 64,
-                                          color: Color(0xFFD1D5DB),
-                                        ),
-                                      ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          SizedBox(
-                            height: 132,
-                            child: ListWheelScrollView(
-                              controller: _galleryController,
-                              itemExtent: 88,
-                              diameterRatio: 1.45,
-                              useMagnifier: true,
-                              magnification: 1.14,
-                              overAndUnderCenterOpacity: 0.45,
-                              squeeze: 0.92,
-                              physics: const FixedExtentScrollPhysics(),
-                              onSelectedItemChanged: (newIndex) {
-                                setState(() {
-                                  _galleryPageIndex = newIndex;
-                                });
-
-                                if (newIndex < visiblePerfumeOptions.length) {
-                                  _applyPerfumeOption(
-                                    visiblePerfumeOptions[newIndex],
-                                  );
-                                }
-                              },
-                              children: List.generate(
-                                visiblePerfumeOptions.length,
-                                (index) {
-                                  final option = visiblePerfumeOptions[index];
-                                  return _buildWheelItem(
-                                    option,
-                                    isSelected: index == _galleryPageIndex,
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Center(
-                            child: Text(
-                              '${_selectedPerfumeOption?.name ?? 'Seleccionar'} • ${_galleryPageIndex + 1} de ${visiblePerfumeOptions.length}',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF6B7280),
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                        ],
-                        const SizedBox(height: 8),
-                      ],
-                      TextFormField(
-                        controller: _name,
-                        decoration: const InputDecoration(
-                          labelText: 'Nombre del producto *',
-                        ),
-                        validator: (v) {
-                          if (v == null || v.trim().isEmpty) {
-                            return 'Ingresa el nombre';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      if (_isEdit && _loadingBrands)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: LinearProgressIndicator(),
-                        )
-                      else if (_isEdit && _brandsError != null)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              _brandsError!,
-                              style: const TextStyle(
-                                color: Color(0xFF9F1239),
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            ElevatedButton.icon(
-                              onPressed: () {
-                                setState(() {
-                                  _loadingBrands = true;
-                                  _brandsError = null;
-                                });
-                                _loadBrands();
-                              },
-                              icon: const Icon(Icons.refresh),
-                              label: const Text('Reintentar cargar casas'),
-                            ),
-                          ],
-                        )
-                      else if (_isEdit)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            DropdownSearch<Brand>(
-                              items: _brands,
-                              selectedItem: _selectedBrand,
-                              compareFn: (item, selected) =>
-                                  item.id == selected.id,
-                              itemAsString: (Brand b) {
-                                final country = (b.country ?? '').trim();
-                                return country.isEmpty
-                                    ? b.name
-                                    : '${b.name} • $country';
-                              },
-                              popupProps: const PopupProps.menu(
-                                showSearchBox: true,
-                              ),
-                              dropdownDecoratorProps:
-                                  const DropDownDecoratorProps(
-                                dropdownSearchDecoration: InputDecoration(
-                                  labelText: 'Casa fabricante *',
-                                  border: OutlineInputBorder(),
-                                ),
-                              ),
-                              onChanged: (Brand? b) {
-                                  setState(() {
-                                    _selectedBrand = b;
-                                  });
-                              },
-                              validator: (Brand? b) {
-                                if (b == null) {
-                                  return 'Selecciona una casa fabricante';
+                              validator: (v) {
+                                if (v == null || v.trim().isEmpty) {
+                                  return 'Ingresa el nombre';
                                 }
                                 return null;
                               },
                             ),
-                            const SizedBox(height: 8),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: _price,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: const InputDecoration(
+                                labelText: 'Precio *',
+                              ),
+                              validator: (v) {
+                                final p = _toDouble(v ?? '');
+                                if (p <= 0) return 'Precio inválido';
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: _sku,
+                              decoration: const InputDecoration(
+                                labelText: 'SKU (opcional)',
+                                hintText: 'Ej: DIOR-SAU-100',
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            DropdownButtonFormField<String>(
+                              initialValue: _gender,
+                              decoration: const InputDecoration(
+                                labelText: 'Género (opcional)',
+                              ),
+                              items: const [
+                                DropdownMenuItem(
+                                  value: 'FEMENINO',
+                                  child: Text('Femenino'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'MASCULINO',
+                                  child: Text('Masculino'),
+                                ),
+                                DropdownMenuItem(
+                                  value: 'UNISEX',
+                                  child: Text('Unisex'),
+                                ),
+                              ],
+                              onChanged: (v) => setState(() => _gender = v),
+                            ),
+                            const SizedBox(height: 10),
+                            TextFormField(
+                              controller: _description,
+                              maxLines: 3,
+                              decoration: const InputDecoration(
+                                labelText: 'Descripción (opcional)',
+                              ),
+                            ),
+                            const SizedBox(height: 12),
                             Row(
                               children: [
-                                const Spacer(),
-                                TextButton.icon(
-                                  onPressed:
-                                      _saving ? null : _openCreateBrandModal,
-                                  icon: const Icon(Icons.add_business_outlined),
-                                  label: const Text('Agregar casa fabricante'),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _stock,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Stock',
+                                    ),
+                                    validator: (v) {
+                                      final n = _toInt(v ?? '0');
+                                      if (n < 0) return 'Inválido';
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _minStock,
+                                    keyboardType: TextInputType.number,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Stock mínimo',
+                                    ),
+                                    validator: (v) {
+                                      final n = _toInt(v ?? '0');
+                                      if (n < 0) return 'Inválido';
+                                      return null;
+                                    },
+                                  ),
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 16),
+                            GradientButton(
+                              text: _saving
+                                  ? (_isEdit
+                                      ? 'Guardando cambios...'
+                                      : 'Guardando...')
+                                  : (_isEdit ? 'Actualizar' : 'Guardar'),
+                              onPressed: _saving ? null : _save,
+                            ),
                           ],
                         ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _price,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Precio *',
-                        ),
-                        validator: (v) {
-                          final p = _toDouble(v ?? '');
-                          if (p <= 0) return 'Precio inválido';
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _sku,
-                        decoration: const InputDecoration(
-                          labelText: 'SKU (opcional)',
-                          hintText: 'Ej: DIOR-SAU-100',
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      DropdownButtonFormField<String>(
-                        value: _gender,
-                        decoration: const InputDecoration(
-                          labelText: 'Género (opcional)',
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'FEMENINO',
-                            child: Text('Femenino'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'MASCULINO',
-                            child: Text('Masculino'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'UNISEX',
-                            child: Text('Unisex'),
-                          ),
-                        ],
-                        onChanged: (v) => setState(() => _gender = v),
-                      ),
-                      const SizedBox(height: 10),
-                      TextFormField(
-                        controller: _description,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Descripción (opcional)',
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (imagePreviewUrl.isNotEmpty)
-                        Container(
-                          width: double.infinity,
-                          height: 180,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(18),
-                            color: Colors.white,
-                            border: Border.all(
-                              color: const Color(0xFFE5E7EB),
-                            ),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: _ResilientNetworkImage(
-                            key: ValueKey('form-preview-$imagePreviewUrl'),
-                            imageUrls: _imageUrlCandidates(_imageUrl.text),
-                            fit: BoxFit.cover,
-                            loading: const Center(
-                              child: CircularProgressIndicator(),
-                            ),
-                            fallback: const Center(
-                              child: Text(
-                                'No se pudo cargar la imagen',
-                                style: TextStyle(
-                                  color: Color(0xFF6B7280),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (imagePreviewUrl.isNotEmpty)
-                        const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _stock,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Stock',
-                              ),
-                              validator: (v) {
-                                final n = _toInt(v ?? '0');
-                                if (n < 0) return 'Inválido';
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextFormField(
-                              controller: _minStock,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'Stock mínimo',
-                              ),
-                              validator: (v) {
-                                final n = _toInt(v ?? '0');
-                                if (n < 0) return 'Inválido';
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      GradientButton(
-                        text: _saving
-                            ? (_isEdit
-                                ? 'Guardando cambios...'
-                                : 'Guardando...')
-                            : (_isEdit ? 'Actualizar' : 'Guardar'),
-                        onPressed: _saving ? null : _save,
                       ),
                     ],
                   ),
