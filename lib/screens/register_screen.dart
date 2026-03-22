@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -22,25 +23,139 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _fullNameCtrl = TextEditingController();
   final _usernameCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _adminKeyCtrl = TextEditingController();
 
   bool _loading = false;
   bool _loadingLocation = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
   String? _error;
 
-  String _role = 'USER';
+  String? _role;
+  String? _roleError;
+
+  @override
+  void initState() {
+    super.initState();
+    _usernameCtrl.addListener(_onFormChanged);
+    _cityCtrl.addListener(_onFormChanged);
+    _phoneCtrl.addListener(_onFormChanged);
+    _passwordCtrl.addListener(_onPasswordChanged);
+    _confirmCtrl.addListener(_onFormChanged);
+    _adminKeyCtrl.addListener(_onFormChanged);
+  }
+
+  void _onPasswordChanged() {
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+    });
+  }
+
+  void _onFormChanged() {
+    if (!mounted) return;
+    setState(() {
+      _error = null;
+      if (_role != null) {
+        _roleError = null;
+      }
+    });
+  }
 
   @override
   void dispose() {
     _fullNameCtrl.dispose();
     _usernameCtrl.dispose();
     _cityCtrl.dispose();
+    _phoneCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
     _adminKeyCtrl.dispose();
     super.dispose();
+  }
+
+  bool _hasUppercase(String text) => RegExp(r'[A-Z]').hasMatch(text);
+  bool _hasNumber(String text) => RegExp(r'\d').hasMatch(text);
+  bool _hasSpecial(String text) => RegExp(r'[^A-Za-z0-9]').hasMatch(text);
+
+  String? _validateRole(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Selecciona un rol para continuar';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    final password = value ?? '';
+    if (password.isEmpty) {
+      return 'Contraseña es obligatoria';
+    }
+    if (password.length < 8) {
+      return 'La contraseña debe tener mínimo 8 caracteres';
+    }
+    if (!_hasUppercase(password)) {
+      return 'Incluye al menos 1 letra mayúscula';
+    }
+    if (!_hasNumber(password)) {
+      return 'Incluye al menos 1 número';
+    }
+    if (!_hasSpecial(password)) {
+      return 'Incluye al menos 1 carácter especial';
+    }
+    return null;
+  }
+
+  String? _validateConfirmPassword(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return 'Confirmar contraseña es obligatoria';
+    }
+    if (value != _passwordCtrl.text) {
+      return 'La confirmación no coincide con la contraseña';
+    }
+    return null;
+  }
+
+  String? _validatePhone(String? value) {
+    final phone = (value ?? '').replaceAll(RegExp(r'\D'), '');
+    if (phone.isEmpty) {
+      return 'Teléfono es obligatorio';
+    }
+    if (!RegExp(r'^\d{9}$').hasMatch(phone)) {
+      return 'Ingresa 9 dígitos válidos (sin +593)';
+    }
+    if (!phone.startsWith('9')) {
+      return 'El número debe iniciar con 9';
+    }
+    return null;
+  }
+
+  String _normalizedPhone() =>
+      '+593${_phoneCtrl.text.replaceAll(RegExp(r'\D'), '')}';
+
+  bool get _isPasswordMinLength => _passwordCtrl.text.length >= 8;
+  bool get _isPasswordHasUppercase => _hasUppercase(_passwordCtrl.text);
+  bool get _isPasswordHasNumber => _hasNumber(_passwordCtrl.text);
+  bool get _isPasswordHasSpecial => _hasSpecial(_passwordCtrl.text);
+
+  bool get _canSubmit {
+    if (_loading) return false;
+    if (Validators.username(_usernameCtrl.text) != null) return false;
+    if (Validators.requiredField(_cityCtrl.text, field: 'Ciudad') != null) {
+      return false;
+    }
+    if (_validateRole(_role) != null) return false;
+    if (_validatePhone(_phoneCtrl.text) != null) return false;
+    if (_validatePassword(_passwordCtrl.text) != null) return false;
+    if (_validateConfirmPassword(_confirmCtrl.text) != null) return false;
+    if (_role == 'ADMIN' &&
+        Validators.requiredField(_adminKeyCtrl.text, field: 'Código admin') !=
+            null) {
+      return false;
+    }
+    return true;
   }
 
   Future<void> _detectCity() async {
@@ -140,7 +255,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
-    if (!_formKey.currentState!.validate()) return;
+
+    final roleError = _validateRole(_role);
+    setState(() {
+      _roleError = roleError;
+    });
+
+    if (!_formKey.currentState!.validate() || roleError != null) return;
 
     setState(() {
       _loading = true;
@@ -154,8 +275,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
         fullName: _fullNameCtrl.text.trim().isEmpty
             ? null
             : _fullNameCtrl.text.trim(),
-        city: _cityCtrl.text.trim().isEmpty ? null : _cityCtrl.text.trim(),
-        role: _role,
+        city: _cityCtrl.text.trim(),
+        phone: _normalizedPhone(),
+        role: _role!,
         adminKey: _role == 'ADMIN' ? _adminKeyCtrl.text.trim() : null,
       );
 
@@ -243,6 +365,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           controller: _usernameCtrl,
                           textInputAction: TextInputAction.next,
                           validator: Validators.username,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
                         const Align(
@@ -279,6 +402,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           ),
                           validator: (value) =>
                               Validators.requiredField(value, field: 'Ciudad'),
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
                         const Align(
@@ -296,9 +420,53 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               : (v) {
                                   setState(() {
                                     _role = v;
+                                    _roleError = null;
                                     _error = null;
                                   });
                                 },
+                        ),
+                        if (_roleError != null) ...[
+                          const SizedBox(height: 6),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              _roleError!,
+                              style: const TextStyle(
+                                color: Color(0xFF9F1239),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 14),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Teléfono',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        TextFormField(
+                          controller: _phoneCtrl,
+                          keyboardType: TextInputType.phone,
+                          textInputAction: TextInputAction.next,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                            const _EcuadorPhoneMaskFormatter(),
+                          ],
+                          decoration: InputDecoration(
+                            hintText: '9XX XXX XXX',
+                            prefixText: _cityCtrl.text.trim().isNotEmpty
+                                ? '🇪🇨 +593 '
+                                : null,
+                            helperText: _cityCtrl.text.trim().isNotEmpty
+                                ? 'Ingresa el número sin el prefijo'
+                                : 'Selecciona una ciudad para usar +593',
+                          ),
+                          validator: _validatePhone,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
                         if (_role == 'ADMIN') ...[
@@ -320,6 +488,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 field: 'Código admin',
                               );
                             },
+                            autovalidateMode:
+                                AutovalidateMode.onUserInteraction,
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -333,9 +503,36 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _passwordCtrl,
-                          obscureText: true,
+                          obscureText: _obscurePassword,
                           textInputAction: TextInputAction.next,
-                          validator: Validators.password,
+                          decoration: InputDecoration(
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Mostrar contraseña'
+                                  : 'Ocultar contraseña',
+                              onPressed: _loading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _obscurePassword = !_obscurePassword;
+                                      });
+                                    },
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                            ),
+                          ),
+                          validator: _validatePassword,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                        ),
+                        const SizedBox(height: 8),
+                        _PasswordRulesHint(
+                          minLengthOk: _isPasswordMinLength,
+                          uppercaseOk: _isPasswordHasUppercase,
+                          numberOk: _isPasswordHasNumber,
+                          specialOk: _isPasswordHasSpecial,
                         ),
                         const SizedBox(height: 14),
                         const Align(
@@ -348,10 +545,29 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _confirmCtrl,
-                          obscureText: true,
+                          obscureText: _obscureConfirm,
                           textInputAction: TextInputAction.done,
-                          validator: (v) =>
-                              Validators.confirmPassword(v, _passwordCtrl.text),
+                          decoration: InputDecoration(
+                            suffixIcon: IconButton(
+                              tooltip: _obscureConfirm
+                                  ? 'Mostrar confirmación'
+                                  : 'Ocultar confirmación',
+                              onPressed: _loading
+                                  ? null
+                                  : () {
+                                      setState(() {
+                                        _obscureConfirm = !_obscureConfirm;
+                                      });
+                                    },
+                              icon: Icon(
+                                _obscureConfirm
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                            ),
+                          ),
+                          validator: _validateConfirmPassword,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           onFieldSubmitted: (_) => _submit(),
                         ),
                         const SizedBox(height: 16),
@@ -379,7 +595,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         GradientButton(
                           text: 'Registrar',
                           loading: _loading,
-                          onPressed: _loading ? null : _submit,
+                          onPressed: _canSubmit ? _submit : null,
                         ),
                         const SizedBox(height: 10),
                         TextButton(
@@ -401,7 +617,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 }
 
 class _RoleSelector extends StatelessWidget {
-  final String value;
+  final String? value;
   final ValueChanged<String>? onChanged;
 
   const _RoleSelector({required this.value, required this.onChanged});
@@ -478,6 +694,104 @@ class _RoleChip extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _PasswordRulesHint extends StatelessWidget {
+  final bool minLengthOk;
+  final bool uppercaseOk;
+  final bool numberOk;
+  final bool specialOk;
+
+  const _PasswordRulesHint({
+    required this.minLengthOk,
+    required this.uppercaseOk,
+    required this.numberOk,
+    required this.specialOk,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _PasswordRuleItem(
+          text: 'Mínimo 8 caracteres',
+          ok: minLengthOk,
+        ),
+        _PasswordRuleItem(
+          text: 'Al menos 1 letra mayúscula',
+          ok: uppercaseOk,
+        ),
+        _PasswordRuleItem(
+          text: 'Al menos 1 número',
+          ok: numberOk,
+        ),
+        _PasswordRuleItem(
+          text: 'Al menos 1 carácter especial',
+          ok: specialOk,
+        ),
+      ],
+    );
+  }
+}
+
+class _PasswordRuleItem extends StatelessWidget {
+  final String text;
+  final bool ok;
+
+  const _PasswordRuleItem({required this.text, required this.ok});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = ok ? const Color(0xFF047857) : AppTheme.textMuted;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(
+        children: [
+          Icon(
+            ok ? Icons.check_circle : Icons.radio_button_unchecked,
+            size: 15,
+            color: color,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EcuadorPhoneMaskFormatter extends TextInputFormatter {
+  const _EcuadorPhoneMaskFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final limited = digits.length > 9 ? digits.substring(0, 9) : digits;
+
+    final buffer = StringBuffer();
+    for (var i = 0; i < limited.length; i++) {
+      if (i == 3 || i == 6) buffer.write(' ');
+      buffer.write(limited[i]);
+    }
+
+    final formatted = buffer.toString();
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
     );
   }
 }

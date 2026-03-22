@@ -9,6 +9,8 @@ import 'package:flutter_application_3/ui/app_theme.dart';
 import 'package:flutter_application_3/ui/app_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'onboarding_screen.dart';
+
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -17,6 +19,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  static const _kOnboardingDoneKey = 'onboarding_done';
+
   final _auth = AuthService();
   final _profileService = ProfileService();
   final _picker = ImagePicker();
@@ -24,6 +28,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+  String? _success;
   Map<String, dynamic>? _user;
   String? _avatarData;
   File? _avatarFile;
@@ -48,6 +53,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _success = null;
     });
 
     try {
@@ -137,6 +143,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() {
       _saving = true;
       _error = null;
+      _success = null;
     });
 
     try {
@@ -171,16 +178,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       setState(() {
         _user = mergedUser;
+        _success = 'Perfil actualizado correctamente';
       });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Perfil actualizado')),
-      );
     } catch (e) {
       if (!mounted) return;
 
       setState(() {
         _error = e.toString().replaceAll('Exception: ', '');
+        _success = null;
       });
     } finally {
       if (mounted) {
@@ -226,6 +231,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _reactivateOnboarding() async {
+    final sharedPreferences = await SharedPreferences.getInstance();
+    await sharedPreferences.setBool(_kOnboardingDoneKey, false);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Onboarding reactivado para el próximo inicio'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fullName = _user?['fullName'] ?? _user?['name'] ?? 'Perfil';
@@ -235,130 +253,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Perfil'),
-        backgroundColor: AppTheme.brandPink,
       ),
-      body: AppBackground(
-        child: SafeArea(
-          child: RefreshIndicator(
-            onRefresh: _loadProfile,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const SizedBox(height: 4),
-                        Stack(
-                          alignment: Alignment.bottomRight,
+      body: Stack(
+        children: [
+          AppBackground(
+            child: SafeArea(
+              child: RefreshIndicator(
+                onRefresh: _loadProfile,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            CircleAvatar(
-                              radius: 52,
-                              backgroundColor: AppTheme.brandPink,
-                              backgroundImage: avatarProvider,
-                              child: avatarProvider == null
-                                  ? const Icon(Icons.person, size: 48)
-                                  : null,
+                            const SizedBox(height: 4),
+                            Stack(
+                              alignment: Alignment.bottomRight,
+                              children: [
+                                CircleAvatar(
+                                  radius: 52,
+                                  backgroundColor: AppTheme.brandPink,
+                                  backgroundImage: avatarProvider,
+                                  child: avatarProvider == null
+                                      ? const Icon(Icons.person, size: 48)
+                                      : null,
+                                ),
+                                FloatingActionButton.small(
+                                  heroTag: 'avatarBtn',
+                                  onPressed: _showPhotoOptions,
+                                  child: const Icon(Icons.camera_alt_outlined),
+                                ),
+                              ],
                             ),
-                            FloatingActionButton.small(
-                              heroTag: 'avatarBtn',
-                              onPressed: _showPhotoOptions,
-                              child: const Icon(Icons.camera_alt_outlined),
+                            const SizedBox(height: 12),
+                            Text(
+                              fullName.toString(),
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '@$username',
+                              style: const TextStyle(
+                                color: AppTheme.textMuted,
+                                fontSize: 14,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      AppCard(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const Text(
+                              'Editar información',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: _nameController,
+                              textCapitalization: TextCapitalization.words,
+                              decoration: const InputDecoration(
+                                labelText: 'Nombre completo',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            TextField(
+                              controller: _usernameController,
+                              decoration: const InputDecoration(
+                                labelText: 'Usuario',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            if (_success != null) ...[
+                              SuccessMessage(
+                                text: _success!,
+                                onDismiss: () =>
+                                    setState(() => _success = null),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            if (_error != null) ...[
+                              ErrorMessage(
+                                text: _error!,
+                                onDismiss: () => setState(() => _error = null),
+                              ),
+                              const SizedBox(height: 10),
+                            ],
+                            GradientButton(
+                              text: 'Guardar perfil',
+                              loading: _saving,
+                              onPressed: _saving ? null : _saveProfile,
+                            ),
+                            const SizedBox(height: 10),
+                            SecondaryButton(
+                              onPressed: _saving
+                                  ? null
+                                  : () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) =>
+                                              const OnboardingScreen(
+                                            previewOnly: true,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                              icon: Icons.slideshow_outlined,
+                              text: 'Ver onboarding otra vez',
+                            ),
+                            const SizedBox(height: 10),
+                            SecondaryButton(
+                              onPressed: _saving ? null : _reactivateOnboarding,
+                              icon: Icons.restart_alt,
+                              text: 'Reactivar onboarding (próximo inicio)',
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        Text(
-                          fullName.toString(),
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w900,
-                          ),
+                      ),
+                      const SizedBox(height: 14),
+                      if (_loading)
+                        const Center(
+                          child: CircularProgressIndicator(),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          '@$username',
-                          style: const TextStyle(
-                            color: AppTheme.textMuted,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: 12),
-                  AppCard(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Text(
-                          'Editar información',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _nameController,
-                          textCapitalization: TextCapitalization.words,
-                          decoration: const InputDecoration(
-                            labelText: 'Nombre completo',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        TextField(
-                          controller: _usernameController,
-                          decoration: const InputDecoration(
-                            labelText: 'Usuario',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        if (_error != null)
-                          Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        const SizedBox(height: 4),
-                        ElevatedButton.icon(
-                          onPressed: _saving ? null : _saveProfile,
-                          icon: _saving
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.save),
-                          label: Text(
-                            _saving ? 'Guardando...' : 'Guardar perfil',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppTheme.brandPink,
-                            minimumSize: const Size.fromHeight(48),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  if (_loading)
-                    const Center(
-                      child: CircularProgressIndicator(),
-                    ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
+          LoadingOverlay(
+            visible: _saving,
+            message: 'Guardando cambios...',
+          ),
+        ],
       ),
     );
   }

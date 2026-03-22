@@ -5,6 +5,8 @@ import 'package:flutter_application_3/ui/app_widgets.dart';
 import 'package:flutter_application_3/services/auth_service.dart';
 
 import 'package:flutter_application_3/screens/inventory_screen.dart';
+import 'package:flutter_application_3/screens/add_brand_screen.dart';
+import 'package:flutter_application_3/screens/product_form_screen.dart';
 import 'package:flutter_application_3/screens/products_screen.dart';
 import 'package:flutter_application_3/screens/profile_screen.dart';
 import 'package:flutter_application_3/screens/users_screen.dart';
@@ -155,14 +157,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             },
                           ),
                           _ModuleTile(
-                            title: 'Reportes',
-                            subtitle: 'Analítica',
-                            icon: Icons.auto_graph_outlined,
+                            title: 'Agregar casa',
+                            subtitle: 'Casa fabricante',
+                            icon: Icons.storefront_outlined,
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF111827), Color(0xFF374151)],
+                              colors: [
+                                AppTheme.brandPink,
+                                AppTheme.brandOrange
+                              ],
                             ),
                             onTap: () {
-                              _snack(context, 'Reportes (próximo módulo)');
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AddBrandScreen(),
+                                ),
+                              );
                             },
                           ),
                           _ModuleTile(
@@ -194,13 +204,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   const SizedBox(height: 18),
                   const _SectionTitle(
                     title: 'Acciones rápidas',
-                    subtitle: 'Atajos para tu día a día',
+                    subtitle: 'Las más usadas',
                   ),
                   const SizedBox(height: 12),
                   _QuickActionCard(
                     icon: Icons.person_outline,
                     title: 'Mi perfil',
-                    subtitle: 'Ver y editar datos de usuario',
+                    subtitle: 'Editar información personal',
                     onTap: () {
                       Navigator.push(
                         context,
@@ -214,9 +224,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   _QuickActionCard(
                     icon: Icons.add_circle_outline,
                     title: 'Nuevo producto',
-                    subtitle: 'Crear un perfume en 10 segundos',
-                    onTap: () =>
-                        _snack(context, 'Nuevo producto (próximo módulo)'),
+                    subtitle: 'Agregar de inmediato',
+                    onTap: () async {
+                      final created = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProductFormScreen(),
+                        ),
+                      );
+
+                      if (!mounted) return;
+
+                      if (created == true) {
+                        await _loadMe();
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Row(
+                              children: [
+                                Icon(Icons.check_circle, color: Colors.white),
+                                SizedBox(width: 8),
+                                Text('Producto creado ✓'),
+                              ],
+                            ),
+                            backgroundColor: Color(0xFF059669),
+                            duration: Duration(seconds: 2),
+                          ),
+                        );
+                      }
+                    },
                   ),
                   const SizedBox(height: 10),
                   _QuickActionCard(
@@ -224,29 +260,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Cerrar sesión',
                     subtitle: 'Salir de la cuenta actual',
                     onTap: _logout,
-                    danger: true,
-                  ),
-                  const SizedBox(height: 18),
-                  AppCard(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      children: const [
-                        Icon(
-                          Icons.tips_and_updates_outlined,
-                          color: AppTheme.brandPink,
-                        ),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Tip: Mantén tu inventario actualizado. Un stock limpio vende más.',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ],
               ),
@@ -258,7 +271,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AppTheme.textDark,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
 
@@ -565,20 +584,16 @@ class _QuickActionCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
-  final bool danger;
 
   const _QuickActionCard({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
-    this.danger = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = danger ? const Color(0xFFEF4444) : AppTheme.brandPink;
-
     return AppCard(
       padding: const EdgeInsets.all(14),
       child: InkWell(
@@ -594,7 +609,7 @@ class _QuickActionCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: const Color(0xFFE6E8F0)),
               ),
-              child: Icon(icon, color: iconColor),
+              child: Icon(icon, color: AppTheme.brandPink),
             ),
             const SizedBox(width: 12),
             Expanded(

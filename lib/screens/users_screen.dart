@@ -296,6 +296,16 @@ class _UsersScreenState extends State<UsersScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Usuarios'),
+        actions: [
+          IconButton(
+            tooltip: 'Refrescar',
+            onPressed: _load,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
       body: AppBackground(
         child: SafeArea(
           child: RefreshIndicator(
@@ -304,33 +314,12 @@ class _UsersScreenState extends State<UsersScreen> {
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(18),
               children: [
-                AppCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 46,
-                        height: 46,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          gradient: const LinearGradient(
-                              colors: [Color(0xFFEF4444), Color(0xFFF97316)]),
-                        ),
-                        child: const Icon(Icons.admin_panel_settings_outlined,
-                            color: Colors.white),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text('Usuarios',
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: AppTheme.textDark)),
-                      ),
-                      IconButton(
-                          onPressed: () => Navigator.pop(context),
-                          icon: const Icon(Icons.close)),
-                    ],
+                const AppPageHeader(
+                  icon: Icons.admin_panel_settings_outlined,
+                  title: 'Gestión de usuarios',
+                  subtitle: 'Administra accesos y roles',
+                  gradient: LinearGradient(
+                    colors: [Color(0xFFEF4444), Color(0xFFF97316)],
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -340,12 +329,25 @@ class _UsersScreenState extends State<UsersScreen> {
                           padding: EdgeInsets.all(24),
                           child: CircularProgressIndicator()))
                 else if (_error != null)
-                  AppCard(
-                    padding: const EdgeInsets.all(14),
-                    child: Text(_error!,
-                        style: const TextStyle(
-                            color: Color(0xFF9F1239),
-                            fontWeight: FontWeight.w700)),
+                  Column(
+                    children: [
+                      ErrorMessage(text: _error!),
+                      const SizedBox(height: 10),
+                      SecondaryButton(
+                        text: 'Reintentar',
+                        icon: Icons.refresh,
+                        onPressed: _load,
+                      ),
+                    ],
+                  )
+                else if (_users.isEmpty)
+                  AppEmptyState(
+                    icon: Icons.group_outlined,
+                    title: 'No hay usuarios para mostrar',
+                    subtitle:
+                        'Aún no existen usuarios registrados en este entorno.',
+                    actionText: 'Refrescar',
+                    onAction: _load,
                   )
                 else ...[
                   ..._users.map((u) => Padding(

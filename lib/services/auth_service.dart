@@ -75,6 +75,7 @@ class AuthService {
     required String password,
     String? fullName,
     String? city,
+    String? phone,
     String role = 'USER',
     String? adminKey,
   }) async {
@@ -90,6 +91,7 @@ class AuthService {
       if (adminKey != null && adminKey.trim().isNotEmpty)
         'adminKey': adminKey.trim(),
       if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
+      if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
     };
 
     final data = await _api.post('/api/auth/register', body: body);

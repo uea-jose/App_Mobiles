@@ -1,3 +1,5 @@
+import '../services/api_client.dart';
+
 class ProductDTO {
   final String id;
   final String? sku;
@@ -41,21 +43,64 @@ class ProductDTO {
     return int.tryParse(v.toString()) ?? 0;
   }
 
+  static String? _normalizeImageUrl(dynamic raw) {
+    final value = raw?.toString().trim();
+    if (value == null || value.isEmpty) return null;
+
+    final trimmed = value.replaceAll('\\', '/');
+    if (trimmed.startsWith('data:image/')) return trimmed;
+
+    final apiUri = Uri.tryParse(ApiClient.baseUrl);
+    final appHost = apiUri?.host.isNotEmpty == true ? apiUri!.host : '10.0.2.2';
+    final apiOrigin = apiUri?.origin ?? 'http://$appHost:3000';
+
+    if (!trimmed.startsWith('http://') &&
+        !trimmed.startsWith('https://') &&
+        !trimmed.startsWith('/')) {
+      final normalizedPath =
+          trimmed.startsWith('./') ? trimmed.substring(2) : trimmed;
+      final path = normalizedPath.startsWith('/')
+          ? normalizedPath.substring(1)
+          : normalizedPath;
+      return Uri.encodeFull('$apiOrigin/$path');
+    }
+
+    if (trimmed.startsWith('/')) {
+      return Uri.encodeFull('$apiOrigin$trimmed');
+    }
+
+    final uri = Uri.tryParse(trimmed);
+    if (uri == null) return Uri.encodeFull(trimmed);
+
+    final host = uri.host.toLowerCase();
+    if (host == '127.0.0.1' ||
+        host == 'localhost' ||
+        host == '10.0.2.2' ||
+        host == '10.0.3.2') {
+      return Uri.encodeFull(
+        uri
+            .replace(
+              host: appHost,
+              port: uri.hasPort ? uri.port : null,
+            )
+            .toString(),
+      );
+    }
+
+    return Uri.encodeFull(trimmed);
+  }
+
   factory ProductDTO.fromJson(Map<String, dynamic> json) {
     return ProductDTO(
       id: (json['id'] ?? '').toString(),
       sku: json['sku']?.toString(),
       name: (json['name'] ?? '').toString(),
-
-      // soporta snake_case y camelCase por si acaso
       brandId: (json['brand_id'] ?? json['brandId'] ?? '').toString(),
       brandName: (json['brand_name'] ?? json['brandName'] ?? '').toString(),
-
       gender: json['gender']?.toString(),
       description: json['description']?.toString(),
       price: _parsePrice(json['price']),
-      imageUrl: (json['image_url'] ?? json['imageUrl'])?.toString(),
-
+      imageUrl: _normalizeImageUrl(json['image_url'] ?? json['imageUrl']),
       stock: _parseInt(json['stock']),
       minStock: _parseInt(json['min_stock'] ?? json['minStock']),
     );
@@ -66,7 +111,7 @@ class ProductDTO {
       'id': id,
       'sku': sku,
       'name': name,
-      'brandId': brandId, // para requests normalmente se usa brandId
+      'brandId': brandId,
       'brandName': brandName,
       'gender': gender,
       'description': description,

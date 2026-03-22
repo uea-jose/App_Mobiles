@@ -417,42 +417,13 @@ class _ProductsScreenState extends State<ProductsScreen> {
                                       const AlwaysScrollableScrollPhysics(),
                                   padding: const EdgeInsets.all(16),
                                   children: [
-                                    AppCard(
-                                      padding: const EdgeInsets.all(18),
-                                      child: Column(
-                                        children: [
-                                          const Icon(
-                                            Icons.inventory_2_outlined,
-                                            size: 42,
-                                            color: kSubtleText,
-                                          ),
-                                          const SizedBox(height: 10),
-                                          Text(
-                                            _emptyTitle(_filter),
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w900,
-                                              color: kInk,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                          const SizedBox(height: 6),
-                                          const Text(
-                                            'Agrega un producto nuevo o cambia el filtro del catálogo.',
-                                            style: TextStyle(
-                                              color: kSubtleText,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                          const SizedBox(height: 14),
-                                          ElevatedButton.icon(
-                                            onPressed: _openCreate,
-                                            icon: const Icon(Icons.add),
-                                            label: const Text('Nuevo producto'),
-                                          ),
-                                        ],
-                                      ),
+                                    AppEmptyState(
+                                      icon: Icons.inventory_2_outlined,
+                                      title: _emptyTitle(_filter),
+                                      subtitle:
+                                          'Agrega un producto nuevo o cambia el filtro del catálogo.',
+                                      actionText: 'Nuevo producto',
+                                      onAction: _openCreate,
                                     ),
                                   ],
                                 )
@@ -507,7 +478,6 @@ class _ProductCard extends StatelessWidget {
     required this.onDelete,
     required this.onEdit,
     required this.gradient,
-    super.key,
   });
 
   @override
@@ -629,7 +599,6 @@ class _ProductThumb extends StatelessWidget {
   const _ProductThumb({
     required this.imageUrl,
     required this.gradient,
-    super.key,
   });
 
   @override
@@ -681,7 +650,6 @@ class _ProductHeroImage extends StatelessWidget {
     required this.imageUrl,
     required this.height,
     required this.gradient,
-    super.key,
   });
 
   @override
@@ -721,7 +689,7 @@ class _ProductHeroImage extends StatelessWidget {
 class _ImageFallback extends StatelessWidget {
   final bool big;
 
-  const _ImageFallback({this.big = false, super.key});
+  const _ImageFallback({this.big = false});
 
   @override
   Widget build(BuildContext context) {
@@ -744,7 +712,6 @@ class _FilterChipButton extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    super.key,
   });
 
   @override
@@ -775,7 +742,6 @@ class _SmallInfoPill extends StatelessWidget {
   const _SmallInfoPill({
     required this.icon,
     required this.label,
-    super.key,
   });
 
   @override
@@ -813,7 +779,6 @@ class _MetaChip extends StatelessWidget {
   const _MetaChip({
     required this.icon,
     required this.label,
-    super.key,
   });
 
   @override

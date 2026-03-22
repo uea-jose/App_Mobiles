@@ -7,15 +7,18 @@ class ProductsService {
   final AuthService _auth = AuthService();
 
   Future<String> _token() async {
-    final t = await _auth.getToken();
-    if (t == null || t.isEmpty) throw Exception('No token');
-    return t;
+    final token = await _auth.getToken();
+    if (token == null || token.isEmpty) {
+      throw Exception('No token');
+    }
+    return token;
   }
 
   Future<List<ProductDTO>> list() async {
     final token = await _token();
+
     final data = await _api.get('/api/products', token: token);
-    final raw = (data['products'] as List?) ?? [];
+    final raw = _extractRawList(data);
 
     return raw
         .whereType<Map>()
@@ -23,7 +26,7 @@ class ProductsService {
         .toList();
   }
 
-  Future<String> create({
+  Future<ProductDTO> create({
     String? sku,
     required String name,
     required String brandId,
@@ -31,38 +34,38 @@ class ProductsService {
     String? description,
     required double price,
     String? imageUrl,
-    int stock = 0,
-    int minStock = 0,
+    required int stock,
+    required int minStock,
   }) async {
     final token = await _token();
 
-    final body = <String, dynamic>{
-      'name': name.trim(),
-      'brandId': brandId,
-      'price': price,
-      'stock': stock,
-      'minStock': minStock,
-    };
+    final data = await _api.post(
+      '/api/products',
+      token: token,
+      body: {
+        if (sku != null && sku.trim().isNotEmpty) 'sku': sku.trim(),
+        'name': name.trim(),
+        'brand_id': brandId,
+        'brandId': brandId,
+        if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        'price': price,
+        if (imageUrl != null && imageUrl.trim().isNotEmpty)
+          'image_url': imageUrl.trim(),
+        if (imageUrl != null && imageUrl.trim().isNotEmpty)
+          'imageUrl': imageUrl.trim(),
+        'stock': stock,
+        'min_stock': minStock,
+        'minStock': minStock,
+      },
+    );
 
-    if (sku != null && sku.trim().isNotEmpty) body['sku'] = sku.trim();
-    if (gender != null && gender.trim().isNotEmpty) {
-      body['gender'] = gender.trim().toUpperCase();
-    }
-    if (description != null && description.trim().isNotEmpty) {
-      body['description'] = description.trim();
-    }
-    if (imageUrl != null && imageUrl.trim().isNotEmpty) {
-      body['imageUrl'] = imageUrl.trim();
-    }
-
-    final data = await _api.post('/api/products', token: token, body: body);
-
-    final id = (data['id'] ?? '').toString();
-    if (id.isEmpty) throw Exception('No retornó id del producto');
-    return id;
+    final product = _extractSingleProduct(data) ?? <String, dynamic>{};
+    return ProductDTO.fromJson(product);
   }
 
-  Future<void> update({
+  Future<ProductDTO> update({
     required String id,
     String? sku,
     required String name,
@@ -71,34 +74,33 @@ class ProductsService {
     String? description,
     required double price,
     String? imageUrl,
-    bool isActive = true,
+    bool? isActive,
   }) async {
     final token = await _token();
 
-    final body = <String, dynamic>{
-      'name': name.trim(),
-      'brandId': brandId,
-      'price': price,
-      'isActive': isActive,
-    };
+    final data = await _api.put(
+      '/api/products/$id',
+      token: token,
+      body: {
+        if (sku != null && sku.trim().isNotEmpty) 'sku': sku.trim(),
+        'name': name.trim(),
+        'brand_id': brandId,
+        'brandId': brandId,
+        if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        'price': price,
+        if (imageUrl != null && imageUrl.trim().isNotEmpty)
+          'image_url': imageUrl.trim(),
+        if (imageUrl != null && imageUrl.trim().isNotEmpty)
+          'imageUrl': imageUrl.trim(),
+        if (isActive != null) 'is_active': isActive,
+        if (isActive != null) 'isActive': isActive,
+      },
+    );
 
-    if (sku != null && sku.trim().isNotEmpty) body['sku'] = sku.trim();
-    if (gender != null && gender.trim().isNotEmpty) {
-      body['gender'] = gender.trim().toUpperCase();
-    }
-    if (description != null && description.trim().isNotEmpty) {
-      body['description'] = description.trim();
-    }
-    if (imageUrl != null && imageUrl.trim().isNotEmpty) {
-      body['imageUrl'] = imageUrl.trim();
-    }
-
-    await _api.put('/api/products/$id', token: token, body: body);
-  }
-
-  Future<void> delete(String id) async {
-    final token = await _token();
-    await _api.delete('/api/products/$id', token: token);
+    final product = _extractSingleProduct(data) ?? <String, dynamic>{};
+    return ProductDTO.fromJson(product);
   }
 
   Future<void> setInventory({
@@ -107,10 +109,77 @@ class ProductsService {
     required int minStock,
   }) async {
     final token = await _token();
-    await _api.put(
-      '/api/inventory/$productId',
-      token: token,
-      body: {'stock': stock, 'minStock': minStock},
-    );
+
+    try {
+      await _api.patch(
+        '/api/products/$productId/inventory',
+        token: token,
+        body: {
+          'stock': stock,
+          'min_stock': minStock,
+          'minStock': minStock,
+        },
+      );
+    } catch (_) {
+      await _api.patch(
+        '/api/inventory/$productId',
+        token: token,
+        body: {
+          'stock': stock,
+          'min_stock': minStock,
+          'minStock': minStock,
+        },
+      );
+    }
+  }
+
+  Future<void> delete(String id) async {
+    final token = await _token();
+
+    await _api.delete('/api/products/$id', token: token);
+  }
+
+  Map<String, dynamic>? _extractSingleProduct(Map<String, dynamic> data) {
+    final candidates = [
+      data['product'],
+      data['item'],
+      data['data'],
+      data,
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is Map<String, dynamic> && candidate.isNotEmpty) {
+        return candidate;
+      }
+
+      if (candidate is Map) {
+        return candidate.cast<String, dynamic>();
+      }
+    }
+
+    return null;
+  }
+
+  List<dynamic> _extractRawList(Map<String, dynamic> data) {
+    final candidates = [
+      data['products'],
+      data['items'],
+      data['data'],
+      data['results'],
+    ];
+
+    for (final candidate in candidates) {
+      if (candidate is List && candidate.isNotEmpty) {
+        return candidate;
+      }
+    }
+
+    for (final candidate in candidates) {
+      if (candidate is List) {
+        return candidate;
+      }
+    }
+
+    return const [];
   }
 }

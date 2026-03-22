@@ -1,17 +1,60 @@
-flutter/ephemeral/
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
 
-# Visual Studio user-specific files.
+# Generated files
+*.log
+*.tmp
+*.swp
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# Android
+/android/.gradle/
+/android/app/build/
+/android/local.properties
+/android/.idea/
+
+# iOS
+/ios/Pods/
+/ios/.symlinks/
+/ios/Flutter/Flutter.framework
+/ios/Flutter/Flutter.podspec
+
+# macOS
+/macos/Flutter/Flutter.framework
+
+# Windows
+/windows/flutter/ephemeral/
+
+# Linux
+/linux/flutter/ephemeral/
+
+# Web
+/web/flutter_service_worker.js
+/web/assets/
+
+# ZIP backups (muy importante en tu caso)
+*.zip
+
+# Visual Studio (lo que ya tenías)
 *.suo
 *.user
 *.userosscache
 *.sln.docstates
-
-# Visual Studio build-related files.
 x64/
 x86/
-
-# Visual Studio cache files
-# files ending in .cache can be ignored
 *.[Cc]ache
-# but keep track of directories ending in .cache
 !*.[Cc]ache/
+
+# Misc
+.env
+.DS_Store
+Thumbs.db

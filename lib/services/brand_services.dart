@@ -2,9 +2,23 @@ import '../models/brand.dart';
 import 'api_client.dart';
 import 'auth_service.dart';
 
+class BrandResolveResult {
+  final Brand brand;
+  final bool created;
+
+  const BrandResolveResult({
+    required this.brand,
+    required this.created,
+  });
+}
+
 class BrandService {
   final ApiClient _api = ApiClient();
   final AuthService _auth = AuthService();
+
+  String _normalizeName(String raw) {
+    return raw.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
 
   /// Obtener lista de casas fabricantes (brands)
   Future<List<Brand>> list() async {
@@ -46,6 +60,38 @@ class BrandService {
         (data['brand'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
 
     return Brand.fromJson(brand);
+  }
+
+  Future<BrandResolveResult> findOrCreateByName({
+    required String name,
+    String? country,
+  }) async {
+    final cleanName = name.trim();
+    if (cleanName.isEmpty) {
+      throw Exception('Nombre de casa fabricante requerido');
+    }
+
+    final normalized = _normalizeName(cleanName);
+    final current = await list();
+
+    for (final item in current) {
+      if (_normalizeName(item.name) == normalized) {
+        return BrandResolveResult(brand: item, created: false);
+      }
+    }
+
+    try {
+      final createdBrand = await create(name: cleanName, country: country);
+      return BrandResolveResult(brand: createdBrand, created: true);
+    } catch (_) {
+      final reloaded = await list();
+      for (final item in reloaded) {
+        if (_normalizeName(item.name) == normalized) {
+          return BrandResolveResult(brand: item, created: false);
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Eliminar casa fabricante
