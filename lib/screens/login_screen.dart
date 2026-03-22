@@ -21,6 +21,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _auth = AuthService();
 
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -101,49 +102,47 @@ class _LoginScreenState extends State<LoginScreen> {
                               color: AppTheme.textMuted, fontSize: 13.5),
                         ),
                         const SizedBox(height: 20),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('Usuario',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                        ),
+                        const AppFieldLabel('Usuario'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _usernameCtrl,
                           textInputAction: TextInputAction.next,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
                           validator: Validators.username,
                         ),
                         const SizedBox(height: 16),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text('Contraseña',
-                              style: TextStyle(fontWeight: FontWeight.w600)),
-                        ),
+                        const AppFieldLabel('Contraseña'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _passwordCtrl,
-                          obscureText: true,
+                          obscureText: _obscurePassword,
                           textInputAction: TextInputAction.done,
+                          autovalidateMode: AutovalidateMode.onUserInteraction,
+                          decoration: InputDecoration(
+                            suffixIcon: IconButton(
+                              tooltip: _obscurePassword
+                                  ? 'Mostrar contraseña'
+                                  : 'Ocultar contraseña',
+                              onPressed: _loading
+                                  ? null
+                                  : () => setState(() {
+                                        _obscurePassword = !_obscurePassword;
+                                      }),
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility
+                                    : Icons.visibility_off,
+                              ),
+                            ),
+                          ),
                           validator: Validators.password,
                           onFieldSubmitted: (_) => _submit(),
                         ),
                         const SizedBox(height: 16),
                         if (_error != null) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF1F2),
-                              borderRadius: BorderRadius.circular(12),
-                              border:
-                                  Border.all(color: const Color(0xFFFFCDD5)),
-                            ),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(
-                                color: Color(0xFF9F1239),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
+                          ErrorMessage(
+                            text: _error!,
+                            onDismiss: () => setState(() => _error = null),
                           ),
                           const SizedBox(height: 12),
                         ],

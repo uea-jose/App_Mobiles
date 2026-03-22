@@ -15,36 +15,13 @@ class InventoryScreen extends StatelessWidget {
           child: ListView(
             padding: const EdgeInsets.all(18),
             children: [
-              AppCard(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 46,
-                      height: 46,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        gradient: AppTheme.brandGradient,
-                      ),
-                      child: const Icon(Icons.inventory_2_outlined,
-                          color: Colors.white),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'Inventario',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: AppTheme.textDark,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
+              AppPageHeader(
+                icon: Icons.inventory_2_outlined,
+                title: 'Inventario',
+                subtitle: 'Control de stock y movimientos',
+                trailing: IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
                 ),
               ),
               const SizedBox(height: 14),
@@ -77,6 +54,12 @@ class InventoryScreen extends StatelessWidget {
                           ),
                         );
                       },
+                    ),
+                    const SizedBox(height: 8),
+                    SecondaryButton(
+                      text: 'Volver al Dashboard',
+                      icon: Icons.dashboard_outlined,
+                      onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),

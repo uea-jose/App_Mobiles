@@ -76,20 +76,12 @@ class AuthService {
     String? fullName,
     String? city,
     String? phone,
-    String role = 'USER',
-    String? adminKey,
   }) async {
-    final normalizedRole =
-        role.trim().toUpperCase() == 'ADMIN' ? 'ADMIN' : 'USER';
-
     final body = <String, dynamic>{
       'username': username.trim(),
       'password': password,
-      'role': normalizedRole,
       if (fullName != null && fullName.trim().isNotEmpty)
         'fullName': fullName.trim(),
-      if (adminKey != null && adminKey.trim().isNotEmpty)
-        'adminKey': adminKey.trim(),
       if (city != null && city.trim().isNotEmpty) 'city': city.trim(),
       if (phone != null && phone.trim().isNotEmpty) 'phone': phone.trim(),
     };

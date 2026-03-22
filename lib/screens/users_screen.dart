@@ -18,15 +18,41 @@ class _UsersScreenState extends State<UsersScreen> {
   final ApiClient _api = ApiClient();
   final AuthService _auth = AuthService();
   final ImagePicker _picker = ImagePicker();
+  final TextEditingController _searchCtrl = TextEditingController();
 
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _users = [];
+  String _roleFilter = 'TODOS';
 
   @override
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  List<Map<String, dynamic>> get _visibleUsers {
+    final query = _searchCtrl.text.trim().toLowerCase();
+    return _users.where((user) {
+      final role = (user['role'] ?? '').toString().toUpperCase();
+      if (_roleFilter != 'TODOS' && role != _roleFilter) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final username = (user['username'] ?? '').toString().toLowerCase();
+      final fullName =
+          (user['fullName'] ?? user['name'] ?? '').toString().toLowerCase();
+
+      return username.contains(query) || fullName.contains(query);
+    }).toList();
   }
 
   Future<void> _load() async {
@@ -201,82 +227,39 @@ class _UsersScreenState extends State<UsersScreen> {
     }
   }
 
-  Future<void> _showEditUserDialog(Map<String, dynamic> user) async {
-    final id = user['id'] ?? user['_id'];
-    if (id == null) {
+  Future<void> _updateUser(String userId, Map<String, dynamic> body) async {
+    if (body.isEmpty) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se encuentra ID del usuario')));
+        const SnackBar(content: Text('No hay cambios para actualizar')),
+      );
       return;
     }
 
-    final nameController = TextEditingController(
-        text: user['fullName']?.toString() ?? user['name']?.toString() ?? '');
-    final usernameController =
-        TextEditingController(text: user['username']?.toString() ?? '');
-    final roleController =
-        TextEditingController(text: user['role']?.toString() ?? '');
+    final updateLabel = body.containsKey('avatarBase64')
+        ? 'la foto del usuario'
+        : 'los datos del usuario';
 
-    final result = await showDialog<bool>(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Editar usuario'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(labelText: 'Nombre'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: usernameController,
-                decoration: const InputDecoration(labelText: 'Usuario'),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: roleController,
-                decoration: const InputDecoration(labelText: 'Rol'),
-              ),
-            ],
-          ),
-        ),
+        title: const Text('Confirmar actualización'),
+        content: Text('¿Estás seguro de actualizar $updateLabel?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
             child: const Text('Cancelar'),
           ),
-          ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: AppTheme.brandPink),
+          FilledButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Guardar'),
+            child: const Text('Sí, actualizar'),
           ),
         ],
       ),
     );
 
-    if (result != true) return;
+    if (confirm != true) return;
 
-    final updated = {
-      if (nameController.text.trim().isNotEmpty)
-        'fullName': nameController.text.trim(),
-      if (usernameController.text.trim().isNotEmpty)
-        'username': usernameController.text.trim(),
-      if (roleController.text.trim().isNotEmpty)
-        'role': roleController.text.trim(),
-    };
-
-    if (updated.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No se modificaron campos')));
-      return;
-    }
-
-    await _updateUser(id.toString(), updated);
-  }
-
-  Future<void> _updateUser(String userId, Map<String, dynamic> body) async {
     try {
       final token = await _auth.getToken();
       if (token == null || token.isEmpty) throw Exception('No token');
@@ -295,6 +278,8 @@ class _UsersScreenState extends State<UsersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final users = _visibleUsers;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Usuarios'),
@@ -350,44 +335,94 @@ class _UsersScreenState extends State<UsersScreen> {
                     onAction: _load,
                   )
                 else ...[
-                  ..._users.map((u) => Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: AppCard(
-                          padding: const EdgeInsets.all(0),
-                          child: InkWell(
-                            onTap: () => _showEditUserDialog(u),
-                            child: Padding(
-                              padding: const EdgeInsets.all(14),
-                              child: Row(
-                                children: [
-                                  _buildUserAvatar(u),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(u['username']?.toString() ?? '- -',
-                                            style: const TextStyle(
-                                                fontWeight: FontWeight.w900)),
-                                        const SizedBox(height: 4),
-                                        Text('Rol: ${u['role'] ?? '-'}',
-                                            style: const TextStyle(
-                                                color: AppTheme.textMuted)),
-                                      ],
+                  AppCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      children: [
+                        TextFormField(
+                          controller: _searchCtrl,
+                          onChanged: (_) => setState(() {}),
+                          decoration: const InputDecoration(
+                            hintText: 'Buscar por usuario o nombre',
+                            prefixIcon: Icon(Icons.search),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        DropdownButtonFormField<String>(
+                          value: _roleFilter,
+                          decoration: const InputDecoration(
+                            labelText: 'Filtrar por rol',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'TODOS',
+                              child: Text('Todos los roles'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'ADMIN',
+                              child: Text('ADMIN'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'USER',
+                              child: Text('USER'),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            if (value == null) return;
+                            setState(() => _roleFilter = value);
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (users.isEmpty)
+                    const AppEmptyState(
+                      icon: Icons.filter_list_off,
+                      title: 'No hay coincidencias',
+                      subtitle: 'Prueba otro texto o cambia el filtro de rol.',
+                    )
+                  else
+                    ...users.map((u) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: AppCard(
+                            padding: const EdgeInsets.all(0),
+                            child: InkWell(
+                              onTap: () => _openEditUserPage(u),
+                              child: Padding(
+                                padding: const EdgeInsets.all(14),
+                                child: Row(
+                                  children: [
+                                    _buildUserAvatar(u),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                              u['username']?.toString() ??
+                                                  '- -',
+                                              style: const TextStyle(
+                                                  fontWeight: FontWeight.w900)),
+                                          const SizedBox(height: 4),
+                                          Text('Rol: ${u['role'] ?? '-'}',
+                                              style: const TextStyle(
+                                                  color: AppTheme.textMuted)),
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  IconButton(
-                                    onPressed: () => _showUserActions(u),
-                                    icon: const Icon(Icons.more_vert,
-                                        color: AppTheme.textMuted),
-                                  ),
-                                ],
+                                    IconButton(
+                                      onPressed: () => _showUserActions(u),
+                                      icon: const Icon(Icons.more_vert,
+                                          color: AppTheme.textMuted),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      )),
+                        )),
                 ],
               ],
             ),
@@ -442,6 +477,11 @@ class _UserEditScreenState extends State<UserEditScreen> {
       if (_roleController.text.trim().isNotEmpty)
         'role': _roleController.text.trim(),
     };
+
+    if (updates.isEmpty) {
+      Navigator.of(context).pop(null);
+      return;
+    }
 
     Navigator.of(context).pop(updates);
   }

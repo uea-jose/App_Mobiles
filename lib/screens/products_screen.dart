@@ -22,10 +22,13 @@ class ProductsScreen extends StatefulWidget {
 
 class _ProductsScreenState extends State<ProductsScreen> {
   final ProductsService _service = ProductsService();
+  final ScrollController _filterScrollController = ScrollController();
 
   List<ProductDTO> _items = [];
   bool _loading = true;
   bool _deleting = false;
+  bool _showLeftFilterCue = false;
+  bool _showRightFilterCue = false;
   String? _error;
 
   _CatalogFilter _filter = _CatalogFilter.all;
@@ -33,7 +36,41 @@ class _ProductsScreenState extends State<ProductsScreen> {
   @override
   void initState() {
     super.initState();
+    _filterScrollController.addListener(_updateFilterScrollCues);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateFilterScrollCues();
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _filterScrollController
+      ..removeListener(_updateFilterScrollCues)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateFilterScrollCues() {
+    if (!mounted || !_filterScrollController.hasClients) return;
+
+    final pos = _filterScrollController.position;
+    final left = pos.pixels > 2;
+    final right = pos.pixels < (pos.maxScrollExtent - 2);
+
+    if (left != _showLeftFilterCue || right != _showRightFilterCue) {
+      setState(() {
+        _showLeftFilterCue = left;
+        _showRightFilterCue = right;
+      });
+    }
+  }
+
+  void _setFilter(_CatalogFilter value) {
+    if (_filter == value) return;
+    setState(() {
+      _filter = value;
+    });
   }
 
   Future<void> _load() async {
@@ -61,33 +98,33 @@ class _ProductsScreenState extends State<ProductsScreen> {
   }
 
   Future<void> _openCreate() async {
-    final created = await Navigator.push<bool>(
+    final createdMessage = await Navigator.push<String>(
       context,
       MaterialPageRoute(builder: (_) => const ProductFormScreen()),
     );
 
-    if (created == true) {
+    if (createdMessage != null && createdMessage.trim().isNotEmpty) {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Producto creado correctamente')),
+        SnackBar(content: Text(createdMessage)),
       );
     }
   }
 
   Future<void> _openEdit(ProductDTO item) async {
-    final updated = await Navigator.push<bool>(
+    final updatedMessage = await Navigator.push<String>(
       context,
       MaterialPageRoute(
         builder: (_) => ProductFormScreen(product: item),
       ),
     );
 
-    if (updated == true) {
+    if (updatedMessage != null && updatedMessage.trim().isNotEmpty) {
       await _load();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Producto actualizado correctamente')),
+        SnackBar(content: Text(updatedMessage)),
       );
     }
   }
@@ -197,6 +234,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
                       _MetaChip(
                         icon: Icons.inventory_2_outlined,
                         label: 'Stock: ${item.stock}',
+                        backgroundColor: _stockBackgroundColor(item.stock),
+                        borderColor: _stockBorderColor(item.stock),
+                        iconColor: _stockTextColor(item.stock),
+                        textColor: _stockTextColor(item.stock),
                       ),
                       _MetaChip(
                         icon: Icons.warning_amber_rounded,
@@ -286,6 +327,19 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
+  int get _activeFilterIndex {
+    switch (_filter) {
+      case _CatalogFilter.all:
+        return 0;
+      case _CatalogFilter.male:
+        return 1;
+      case _CatalogFilter.female:
+        return 2;
+      case _CatalogFilter.unisex:
+        return 3;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final visibleItems = _filteredItems;
@@ -312,64 +366,166 @@ class _ProductsScreenState extends State<ProductsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: AppCard(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Catálogos',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: kInk,
+                child: Column(
+                  children: [
+                    AppPageHeader(
+                      icon: Icons.local_mall_outlined,
+                      title: 'Productos',
+                      subtitle: 'Gestiona tu catálogo por tipo de fragancia',
+                      trailing: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Text(
+                          '${visibleItems.length}/${_items.length}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            color: kInk,
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 6),
-                      const Text(
-                        'Administra tus perfumes por tipo de catálogo.',
-                        style: TextStyle(
-                          color: kSubtleText,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
+                    ),
+                    const SizedBox(height: 10),
+                    AppCard(
+                      padding: const EdgeInsets.all(14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _FilterChipButton(
-                            label: 'Todos',
-                            selected: _filter == _CatalogFilter.all,
-                            onTap: () => setState(
-                              () => _filter = _CatalogFilter.all,
+                          Text(
+                            'Filtro activo: ${_catalogFilterLabel(_filter)}',
+                            style: const TextStyle(
+                              color: kSubtleText,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
                             ),
                           ),
-                          _FilterChipButton(
-                            label: 'Masculino',
-                            selected: _filter == _CatalogFilter.male,
-                            onTap: () => setState(
-                              () => _filter = _CatalogFilter.male,
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Desliza para explorar categorías',
+                            style: TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                          _FilterChipButton(
-                            label: 'Femenino',
-                            selected: _filter == _CatalogFilter.female,
-                            onTap: () => setState(
-                              () => _filter = _CatalogFilter.female,
-                            ),
+                          const SizedBox(height: 8),
+                          Stack(
+                            children: [
+                              SizedBox(
+                                height: 44,
+                                child: ListView(
+                                  controller: _filterScrollController,
+                                  scrollDirection: Axis.horizontal,
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 2),
+                                  children: [
+                                    _FilterChipButton(
+                                      label: 'Todos',
+                                      selected: _filter == _CatalogFilter.all,
+                                      onTap: () =>
+                                          _setFilter(_CatalogFilter.all),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _FilterChipButton(
+                                      label: 'Masculino',
+                                      selected: _filter == _CatalogFilter.male,
+                                      onTap: () =>
+                                          _setFilter(_CatalogFilter.male),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _FilterChipButton(
+                                      label: 'Femenino',
+                                      selected:
+                                          _filter == _CatalogFilter.female,
+                                      onTap: () =>
+                                          _setFilter(_CatalogFilter.female),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    _FilterChipButton(
+                                      label: 'Unisex',
+                                      selected:
+                                          _filter == _CatalogFilter.unisex,
+                                      onTap: () =>
+                                          _setFilter(_CatalogFilter.unisex),
+                                    ),
+                                    const SizedBox(width: 2),
+                                  ],
+                                ),
+                              ),
+                              if (_showLeftFilterCue)
+                                Positioned(
+                                  left: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: IgnorePointer(
+                                    child: Container(
+                                      width: 22,
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                          colors: [
+                                            Color(0xFFFFFFFF),
+                                            Color(0x00FFFFFF)
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (_showRightFilterCue)
+                                Positioned(
+                                  right: 0,
+                                  top: 0,
+                                  bottom: 0,
+                                  child: IgnorePointer(
+                                    child: Container(
+                                      width: 22,
+                                      decoration: const BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                          colors: [
+                                            Color(0x00FFFFFF),
+                                            Color(0xFFFFFFFF)
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                          _FilterChipButton(
-                            label: 'Unisex',
-                            selected: _filter == _CatalogFilter.unisex,
-                            onTap: () => setState(
-                              () => _filter = _CatalogFilter.unisex,
-                            ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(4, (index) {
+                              final active = index == _activeFilterIndex;
+                              return AnimatedContainer(
+                                duration: const Duration(milliseconds: 180),
+                                margin:
+                                    const EdgeInsets.symmetric(horizontal: 3),
+                                height: 6,
+                                width: active ? 18 : 6,
+                                decoration: BoxDecoration(
+                                  color: active
+                                      ? const Color(0xFFFF4D8D)
+                                      : const Color(0xFFD1D5DB),
+                                  borderRadius: BorderRadius.circular(999),
+                                ),
+                              );
+                            }),
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
@@ -563,6 +719,10 @@ class _ProductCard extends StatelessWidget {
                       _SmallInfoPill(
                         icon: Icons.inventory_2_outlined,
                         label: 'Stock ${item.stock}',
+                        backgroundColor: _stockBackgroundColor(item.stock),
+                        borderColor: _stockBorderColor(item.stock),
+                        iconColor: _stockTextColor(item.stock),
+                        textColor: _stockTextColor(item.stock),
                       ),
                       const SizedBox(width: 8),
                       _SmallInfoPill(
@@ -738,10 +898,18 @@ class _FilterChipButton extends StatelessWidget {
 class _SmallInfoPill extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color iconColor;
+  final Color textColor;
 
   const _SmallInfoPill({
     required this.icon,
     required this.label,
+    this.backgroundColor = const Color(0xFFF8FAFC),
+    this.borderColor = const Color(0xFFE5E7EB),
+    this.iconColor = kSubtleText,
+    this.textColor = kSubtleText,
   });
 
   @override
@@ -749,21 +917,21 @@ class _SmallInfoPill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: kSubtleText),
+          Icon(icon, size: 14, color: iconColor),
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
-              color: kSubtleText,
+              color: textColor,
             ),
           ),
         ],
@@ -775,10 +943,18 @@ class _SmallInfoPill extends StatelessWidget {
 class _MetaChip extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color backgroundColor;
+  final Color borderColor;
+  final Color iconColor;
+  final Color textColor;
 
   const _MetaChip({
     required this.icon,
     required this.label,
+    this.backgroundColor = const Color(0xFFF8FAFC),
+    this.borderColor = const Color(0xFFE5E7EB),
+    this.iconColor = kSubtleText,
+    this.textColor = kInk,
   });
 
   @override
@@ -786,26 +962,44 @@ class _MetaChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        border: Border.all(color: borderColor),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 16, color: kSubtleText),
+          Icon(icon, size: 16, color: iconColor),
           const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontWeight: FontWeight.w700,
-              color: kInk,
+              color: textColor,
             ),
           ),
         ],
       ),
     );
   }
+}
+
+Color _stockBackgroundColor(int stock) {
+  if (stock >= 7) return const Color(0xFFECFDF5);
+  if (stock >= 4) return const Color(0xFFFFFBEB);
+  return const Color(0xFFFEF2F2);
+}
+
+Color _stockBorderColor(int stock) {
+  if (stock >= 7) return const Color(0xFF86EFAC);
+  if (stock >= 4) return const Color(0xFFFCD34D);
+  return const Color(0xFFFCA5A5);
+}
+
+Color _stockTextColor(int stock) {
+  if (stock >= 7) return const Color(0xFF166534);
+  if (stock >= 4) return const Color(0xFFB45309);
+  return const Color(0xFFB91C1C);
 }
 
 String _genderLabel(String? gender) {
@@ -850,5 +1044,18 @@ String _emptyTitle(_CatalogFilter filter) {
       return 'No hay productos en catálogo femenino';
     case _CatalogFilter.unisex:
       return 'No hay productos en catálogo unisex';
+  }
+}
+
+String _catalogFilterLabel(_CatalogFilter filter) {
+  switch (filter) {
+    case _CatalogFilter.all:
+      return 'Todos';
+    case _CatalogFilter.male:
+      return 'Masculino';
+    case _CatalogFilter.female:
+      return 'Femenino';
+    case _CatalogFilter.unisex:
+      return 'Unisex';
   }
 }

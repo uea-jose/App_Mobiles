@@ -9,6 +9,8 @@ import 'package:flutter_application_3/screens/add_brand_screen.dart';
 import 'package:flutter_application_3/screens/product_form_screen.dart';
 import 'package:flutter_application_3/screens/products_screen.dart';
 import 'package:flutter_application_3/screens/profile_screen.dart';
+import 'package:flutter_application_3/screens/clients_screen.dart';
+import 'package:flutter_application_3/screens/sales_screen.dart';
 import 'package:flutter_application_3/screens/users_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -57,6 +59,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final username = (me?['username'] ?? 'Usuario').toString();
     final role = (me?['role'] ?? 'USER').toString().toUpperCase();
+    final isAdmin = role == 'ADMIN';
+    final unlockedModules = isAdmin ? 6 : 4;
 
     return Scaffold(
       body: AppBackground(
@@ -81,24 +85,114 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     _ErrorBanner(text: error!),
                     const SizedBox(height: 16),
                   ],
+                  AppCard(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const AppFieldLabel('Resumen rápido'),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _DashboardStatChip(
+                              icon: Icons.apps_outlined,
+                              label: 'Módulos activos: $unlockedModules/6',
+                            ),
+                            _DashboardStatChip(
+                              icon: Icons.verified_user_outlined,
+                              label: 'Rol actual: $role',
+                            ),
+                            const _DashboardStatChip(
+                              icon: Icons.touch_app_outlined,
+                              label: 'Desliza para refrescar',
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   const _SectionTitle(
                     title: 'Módulos',
-                    subtitle: 'Gestiona tu tienda con estilo',
+                    subtitle: 'Gestiona operaciones principales de tu tienda',
                   ),
                   const SizedBox(height: 12),
                   LayoutBuilder(
                     builder: (context, c) {
                       final isWide = c.maxWidth >= 520;
                       final crossAxisCount = isWide ? 3 : 2;
+                      final moduleTiles = <Widget>[
+                        _ModuleTile(
+                          title: 'Productos',
+                          subtitle: 'Catálogo',
+                          icon: Icons.local_mall_outlined,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF7C3AED), Color(0xFF22D3EE)],
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ProductsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ModuleTile(
+                          title: 'Agregar casa',
+                          subtitle: 'Casa fabricante',
+                          icon: Icons.storefront_outlined,
+                          gradient: const LinearGradient(
+                            colors: [AppTheme.brandPink, AppTheme.brandOrange],
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const AddBrandScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ModuleTile(
+                          title: 'Ventas',
+                          subtitle: 'Órdenes',
+                          icon: Icons.receipt_long_outlined,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF06B6D4), Color(0xFF10B981)],
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const SalesScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                        _ModuleTile(
+                          title: 'Clientes',
+                          subtitle: 'CRM básico',
+                          icon: Icons.people_outline,
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFFB703), Color(0xFFFB7185)],
+                          ),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const ClientsScreen(),
+                              ),
+                            );
+                          },
+                        ),
+                      ];
 
-                      return GridView.count(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        crossAxisCount: crossAxisCount,
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                        childAspectRatio: 1.12,
-                        children: [
+                      if (isAdmin) {
+                        moduleTiles.insert(
+                          0,
                           _ModuleTile(
                             title: 'Inventario',
                             subtitle: 'Stock & entradas',
@@ -118,63 +212,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               );
                             },
                           ),
-                          _ModuleTile(
-                            title: 'Productos',
-                            subtitle: 'Catálogo',
-                            icon: Icons.local_mall_outlined,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF7C3AED), Color(0xFF22D3EE)],
-                            ),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const ProductsScreen(),
-                                ),
-                              );
-                            },
-                          ),
-                          _ModuleTile(
-                            title: 'Ventas',
-                            subtitle: 'Órdenes',
-                            icon: Icons.receipt_long_outlined,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF06B6D4), Color(0xFF10B981)],
-                            ),
-                            onTap: () {
-                              _snack(context, 'Ventas (próximo módulo)');
-                            },
-                          ),
-                          _ModuleTile(
-                            title: 'Clientes',
-                            subtitle: 'CRM básico',
-                            icon: Icons.people_outline,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFFB703), Color(0xFFFB7185)],
-                            ),
-                            onTap: () {
-                              _snack(context, 'Clientes (próximo módulo)');
-                            },
-                          ),
-                          _ModuleTile(
-                            title: 'Agregar casa',
-                            subtitle: 'Casa fabricante',
-                            icon: Icons.storefront_outlined,
-                            gradient: const LinearGradient(
-                              colors: [
-                                AppTheme.brandPink,
-                                AppTheme.brandOrange
-                              ],
-                            ),
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const AddBrandScreen(),
-                                ),
-                              );
-                            },
-                          ),
+                        );
+
+                        moduleTiles.addAll([
                           _ModuleTile(
                             title: 'Usuarios',
                             subtitle: 'Roles & accesos',
@@ -182,13 +222,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             gradient: const LinearGradient(
                               colors: [Color(0xFFEF4444), Color(0xFFF97316)],
                             ),
-                            badge: role == 'ADMIN' ? 'ADMIN' : null,
+                            badge: 'ADMIN',
                             onTap: () {
-                              if (role != 'ADMIN') {
-                                _snack(
-                                    context, 'Solo ADMIN puede ver Usuarios');
-                                return;
-                              }
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
@@ -197,7 +232,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               );
                             },
                           ),
-                        ],
+                        ]);
+                      }
+
+                      return GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: crossAxisCount,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.12,
+                        children: moduleTiles,
                       );
                     },
                   ),
@@ -226,7 +271,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     title: 'Nuevo producto',
                     subtitle: 'Agregar de inmediato',
                     onTap: () async {
-                      final created = await Navigator.push<bool>(
+                      final createdMessage = await Navigator.push<String>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const ProductFormScreen(),
@@ -235,18 +280,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
                       if (!mounted) return;
 
-                      if (created == true) {
+                      if (createdMessage != null &&
+                          createdMessage.trim().isNotEmpty) {
                         await _loadMe();
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Row(
-                              children: [
-                                Icon(Icons.check_circle, color: Colors.white),
-                                SizedBox(width: 8),
-                                Text('Producto creado ✓'),
-                              ],
-                            ),
+                          SnackBar(
+                            content: Text(createdMessage),
                             backgroundColor: Color(0xFF059669),
                             duration: Duration(seconds: 2),
                           ),
@@ -266,16 +306,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  void _snack(BuildContext context, String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: AppTheme.textDark,
-        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -655,6 +685,43 @@ class _ErrorBanner extends StatelessWidget {
                 color: Color(0xFF9F1239),
                 fontWeight: FontWeight.w700,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardStatChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+
+  const _DashboardStatChip({
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: AppTheme.textMuted),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.textDark,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
             ),
           ),
         ],

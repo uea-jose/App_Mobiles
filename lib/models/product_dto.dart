@@ -1,152 +1,100 @@
-import '../services/api_client.dart';
-
 class ProductDTO {
   final String id;
-  final String? sku;
   final String name;
-
+  final String? sku;
+  final double price;
+  final int stock;
+  final int minStock;
+  final String? description;
+  final String? imageUrl;
+  final String? gender;
   final String brandId;
   final String brandName;
 
-  final String? gender; // FEMENINO | MASCULINO | UNISEX
-  final String? description;
-  final double price;
-  final String? imageUrl;
-
-  final int stock;
-  final int minStock;
-
   const ProductDTO({
     required this.id,
-    required this.sku,
     required this.name,
-    required this.brandId,
-    required this.brandName,
-    required this.gender,
-    required this.description,
+    this.sku,
     required this.price,
-    required this.imageUrl,
     required this.stock,
     required this.minStock,
+    this.description,
+    this.imageUrl,
+    this.gender,
+    required this.brandId,
+    required this.brandName,
   });
 
-  static double _parsePrice(dynamic v) {
-    if (v == null) return 0;
-    if (v is num) return v.toDouble();
-    return double.tryParse(v.toString()) ?? 0;
-  }
-
-  static int _parseInt(dynamic v) {
-    if (v == null) return 0;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse(v.toString()) ?? 0;
-  }
-
-  static String? _normalizeImageUrl(dynamic raw) {
-    final value = raw?.toString().trim();
-    if (value == null || value.isEmpty) return null;
-
-    final trimmed = value.replaceAll('\\', '/');
-    if (trimmed.startsWith('data:image/')) return trimmed;
-
-    final apiUri = Uri.tryParse(ApiClient.baseUrl);
-    final appHost = apiUri?.host.isNotEmpty == true ? apiUri!.host : '10.0.2.2';
-    final apiOrigin = apiUri?.origin ?? 'http://$appHost:3000';
-
-    if (!trimmed.startsWith('http://') &&
-        !trimmed.startsWith('https://') &&
-        !trimmed.startsWith('/')) {
-      final normalizedPath =
-          trimmed.startsWith('./') ? trimmed.substring(2) : trimmed;
-      final path = normalizedPath.startsWith('/')
-          ? normalizedPath.substring(1)
-          : normalizedPath;
-      return Uri.encodeFull('$apiOrigin/$path');
-    }
-
-    if (trimmed.startsWith('/')) {
-      return Uri.encodeFull('$apiOrigin$trimmed');
-    }
-
-    final uri = Uri.tryParse(trimmed);
-    if (uri == null) return Uri.encodeFull(trimmed);
-
-    final host = uri.host.toLowerCase();
-    if (host == '127.0.0.1' ||
-        host == 'localhost' ||
-        host == '10.0.2.2' ||
-        host == '10.0.3.2') {
-      return Uri.encodeFull(
-        uri
-            .replace(
-              host: appHost,
-              port: uri.hasPort ? uri.port : null,
-            )
-            .toString(),
-      );
-    }
-
-    return Uri.encodeFull(trimmed);
-  }
-
   factory ProductDTO.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] ?? json['_id'] ?? json['uuid'] ?? '').toString();
+    final name = (json['name'] ?? json['nombre'] ?? '').toString().trim();
+    final rawSku = json['sku']?.toString();
+    final sku = (rawSku == null || rawSku.trim().isEmpty) ? null : rawSku;
+    final price = _asDouble(json['price'] ?? json['precio']);
+    final stock = _asInt(json['stock']);
+    final minStock = _asInt(json['min_stock'] ?? json['minStock']);
+    final description = json['description']?.toString();
+    final imageUrl = (json['imageUrl'] ?? json['image_url'])?.toString();
+    final gender = json['gender']?.toString();
+
+    String brandId = '';
+    String brandName = '';
+    final brandRaw = json['brand'];
+    if (brandRaw is Map<String, dynamic>) {
+      brandId = (brandRaw['id'] ?? brandRaw['_id'] ?? '').toString();
+      brandName = (brandRaw['name'] ?? '').toString();
+    }
+    if (brandId.isEmpty) {
+      brandId = (json['brand_id'] ?? json['brandId'] ?? '').toString();
+    }
+    if (brandName.isEmpty) {
+      brandName = (json['brand_name'] ?? json['brandName'] ?? '').toString();
+    }
+
     return ProductDTO(
-      id: (json['id'] ?? '').toString(),
-      sku: json['sku']?.toString(),
-      name: (json['name'] ?? '').toString(),
-      brandId: (json['brand_id'] ?? json['brandId'] ?? '').toString(),
-      brandName: (json['brand_name'] ?? json['brandName'] ?? '').toString(),
-      gender: json['gender']?.toString(),
-      description: json['description']?.toString(),
-      price: _parsePrice(json['price']),
-      imageUrl: _normalizeImageUrl(json['image_url'] ?? json['imageUrl']),
-      stock: _parseInt(json['stock']),
-      minStock: _parseInt(json['min_stock'] ?? json['minStock']),
+      id: id,
+      name: name,
+      sku: sku,
+      price: price,
+      stock: stock,
+      minStock: minStock,
+      description: description,
+      imageUrl: imageUrl,
+      gender: gender,
+      brandId: brandId,
+      brandName: brandName,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'sku': sku,
-      'name': name,
-      'brandId': brandId,
-      'brandName': brandName,
-      'gender': gender,
-      'description': description,
-      'price': price,
-      'imageUrl': imageUrl,
-      'stock': stock,
-      'minStock': minStock,
-    };
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        if (sku != null) 'sku': sku,
+        'price': price,
+        'stock': stock,
+        'min_stock': minStock,
+        if (description != null) 'description': description,
+        if (imageUrl != null) 'imageUrl': imageUrl,
+        if (gender != null) 'gender': gender,
+        'brandId': brandId,
+        'brandName': brandName,
+      };
+
+  static double _asDouble(dynamic value) {
+    if (value == null) return 0;
+    if (value is num) return value.toDouble();
+    final normalized = value.toString().trim().replaceAll(',', '.');
+    return double.tryParse(normalized) ?? 0;
   }
 
-  ProductDTO copyWith({
-    String? id,
-    String? sku,
-    String? name,
-    String? brandId,
-    String? brandName,
-    String? gender,
-    String? description,
-    double? price,
-    String? imageUrl,
-    int? stock,
-    int? minStock,
-  }) {
-    return ProductDTO(
-      id: id ?? this.id,
-      sku: sku ?? this.sku,
-      name: name ?? this.name,
-      brandId: brandId ?? this.brandId,
-      brandName: brandName ?? this.brandName,
-      gender: gender ?? this.gender,
-      description: description ?? this.description,
-      price: price ?? this.price,
-      imageUrl: imageUrl ?? this.imageUrl,
-      stock: stock ?? this.stock,
-      minStock: minStock ?? this.minStock,
-    );
+  static int _asInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    final normalized = value.toString().trim().replaceAll(',', '.');
+    final asInt = int.tryParse(normalized);
+    if (asInt != null) return asInt;
+    final asDouble = double.tryParse(normalized);
+    return asDouble?.toInt() ?? 0;
   }
 }

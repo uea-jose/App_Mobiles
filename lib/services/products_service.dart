@@ -74,30 +74,49 @@ class ProductsService {
     String? description,
     required double price,
     String? imageUrl,
+    int? stock,
+    int? minStock,
     bool? isActive,
   }) async {
     final token = await _token();
 
-    final data = await _api.put(
-      '/api/products/$id',
-      token: token,
-      body: {
-        if (sku != null && sku.trim().isNotEmpty) 'sku': sku.trim(),
-        'name': name.trim(),
-        'brand_id': brandId,
-        'brandId': brandId,
-        if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
-        if (description != null && description.trim().isNotEmpty)
-          'description': description.trim(),
-        'price': price,
-        if (imageUrl != null && imageUrl.trim().isNotEmpty)
-          'image_url': imageUrl.trim(),
-        if (imageUrl != null && imageUrl.trim().isNotEmpty)
-          'imageUrl': imageUrl.trim(),
-        if (isActive != null) 'is_active': isActive,
-        if (isActive != null) 'isActive': isActive,
-      },
-    );
+    final payload = {
+      if (sku != null && sku.trim().isNotEmpty) 'sku': sku.trim(),
+      'name': name.trim(),
+      'brand_id': brandId,
+      'brandId': brandId,
+      if (gender != null && gender.trim().isNotEmpty) 'gender': gender.trim(),
+      if (description != null && description.trim().isNotEmpty)
+        'description': description.trim(),
+      'price': price,
+      if (imageUrl != null && imageUrl.trim().isNotEmpty)
+        'image_url': imageUrl.trim(),
+      if (imageUrl != null && imageUrl.trim().isNotEmpty)
+        'imageUrl': imageUrl.trim(),
+      if (stock != null) 'stock': stock,
+      if (minStock != null) 'min_stock': minStock,
+      if (minStock != null) 'minStock': minStock,
+      if (isActive != null) 'is_active': isActive,
+      if (isActive != null) 'isActive': isActive,
+    };
+
+    Map<String, dynamic> data;
+    try {
+      data = await _api.put(
+        '/api/products/$id',
+        token: token,
+        body: payload,
+      );
+    } catch (e) {
+      final msg = e.toString();
+      if (!msg.contains('404')) rethrow;
+
+      data = await _api.patch(
+        '/api/products/$id',
+        token: token,
+        body: payload,
+      );
+    }
 
     final product = _extractSingleProduct(data) ?? <String, dynamic>{};
     return ProductDTO.fromJson(product);
@@ -121,15 +140,27 @@ class ProductsService {
         },
       );
     } catch (_) {
-      await _api.patch(
-        '/api/inventory/$productId',
-        token: token,
-        body: {
-          'stock': stock,
-          'min_stock': minStock,
-          'minStock': minStock,
-        },
-      );
+      try {
+        await _api.put(
+          '/api/inventory/$productId',
+          token: token,
+          body: {
+            'stock': stock,
+            'min_stock': minStock,
+            'minStock': minStock,
+          },
+        );
+      } catch (_) {
+        await _api.patch(
+          '/api/inventory/$productId',
+          token: token,
+          body: {
+            'stock': stock,
+            'min_stock': minStock,
+            'minStock': minStock,
+          },
+        );
+      }
     }
   }
 

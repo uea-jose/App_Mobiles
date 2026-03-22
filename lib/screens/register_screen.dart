@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../services/auth_service.dart';
 import '../ui/app_theme.dart';
@@ -17,6 +19,8 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
+  static const LatLng _defaultQuito = LatLng(-0.1807, -78.4678);
+
   final _formKey = GlobalKey<FormState>();
   final _auth = AuthService();
 
@@ -26,16 +30,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phoneCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  final _adminKeyCtrl = TextEditingController();
 
   bool _loading = false;
   bool _loadingLocation = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
   String? _error;
-
-  String? _role;
-  String? _roleError;
 
   @override
   void initState() {
@@ -45,7 +45,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phoneCtrl.addListener(_onFormChanged);
     _passwordCtrl.addListener(_onPasswordChanged);
     _confirmCtrl.addListener(_onFormChanged);
-    _adminKeyCtrl.addListener(_onFormChanged);
   }
 
   void _onPasswordChanged() {
@@ -59,9 +58,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (!mounted) return;
     setState(() {
       _error = null;
-      if (_role != null) {
-        _roleError = null;
-      }
     });
   }
 
@@ -73,20 +69,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _phoneCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
-    _adminKeyCtrl.dispose();
     super.dispose();
   }
 
   bool _hasUppercase(String text) => RegExp(r'[A-Z]').hasMatch(text);
   bool _hasNumber(String text) => RegExp(r'\d').hasMatch(text);
   bool _hasSpecial(String text) => RegExp(r'[^A-Za-z0-9]').hasMatch(text);
-
-  String? _validateRole(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Selecciona un rol para continuar';
-    }
-    return null;
-  }
 
   String? _validatePassword(String? value) {
     final password = value ?? '';
@@ -146,15 +134,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (Validators.requiredField(_cityCtrl.text, field: 'Ciudad') != null) {
       return false;
     }
-    if (_validateRole(_role) != null) return false;
     if (_validatePhone(_phoneCtrl.text) != null) return false;
     if (_validatePassword(_passwordCtrl.text) != null) return false;
     if (_validateConfirmPassword(_confirmCtrl.text) != null) return false;
-    if (_role == 'ADMIN' &&
-        Validators.requiredField(_adminKeyCtrl.text, field: 'Código admin') !=
-            null) {
-      return false;
-    }
     return true;
   }
 
@@ -206,6 +188,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
         timeLimit: const Duration(seconds: 10),
       );
 
+      await setLocaleIdentifier('es_EC');
       final placemarks = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
@@ -222,6 +205,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
       final city = [
         place.locality,
+        place.subLocality,
         place.subAdministrativeArea,
         place.administrativeArea,
       ]
@@ -236,8 +220,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
         return;
       }
 
+      final cityLower = city.toLowerCase();
+      final isDefaultEmulatorCity = cityLower.contains('mountain view') ||
+          cityLower.contains('california');
+
+      if (position.isMocked && isDefaultEmulatorCity) {
+        setState(() {
+          _cityCtrl.clear();
+          _error =
+              'El emulador está usando ubicación por defecto (Mountain View). Configura una ubicación en Quito para autocompletar.';
+        });
+        return;
+      }
+
       setState(() {
         _cityCtrl.text = city;
+        if (position.isMocked) {
+          _error =
+              'Ubicación simulada detectada (emulador). Configura una ubicación en Ecuador para autocompletar correctamente.';
+        } else {
+          _error = null;
+        }
       });
     } catch (e) {
       setState(() {
@@ -253,15 +256,92 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
   }
 
+  String _extractCityFromPlacemark(Placemark place) {
+    return [
+      place.locality,
+      place.subLocality,
+      place.subAdministrativeArea,
+      place.administrativeArea,
+    ]
+        .where((e) => e != null && e.trim().isNotEmpty)
+        .map((e) => e!.trim())
+        .fold<String>('', (prev, element) => prev.isEmpty ? element : prev);
+  }
+
+  Future<LatLng> _initialMapCenter() async {
+    return _defaultQuito;
+  }
+
+  Future<void> _pickCityOnMap() async {
+    if (_loadingLocation) return;
+    FocusScope.of(context).unfocus();
+
+    setState(() {
+      _loadingLocation = true;
+      _error = null;
+    });
+
+    try {
+      final center = await _initialMapCenter();
+
+      if (!mounted) return;
+
+      final selectedPoint = await showModalBottomSheet<LatLng>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        backgroundColor: Colors.white,
+        builder: (_) => _CityMapPickerSheet(initialCenter: center),
+      );
+
+      if (selectedPoint == null || !mounted) return;
+
+      await setLocaleIdentifier('es_EC');
+      final placemarks = await placemarkFromCoordinates(
+        selectedPoint.latitude,
+        selectedPoint.longitude,
+      );
+
+      if (placemarks.isEmpty) {
+        setState(() {
+          _error =
+              'No se pudo resolver la ciudad desde el mapa. Puedes escribirla manualmente.';
+        });
+        return;
+      }
+
+      final city = _extractCityFromPlacemark(placemarks.first);
+
+      if (city.isEmpty) {
+        setState(() {
+          _error =
+              'No se pudo detectar una ciudad válida. Intenta tocar otra zona del mapa.';
+        });
+        return;
+      }
+
+      setState(() {
+        _cityCtrl.text = city;
+        _error = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'No se pudo abrir el mapa. Escribe tu ciudad manualmente.';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingLocation = false;
+        });
+      }
+    }
+  }
+
   Future<void> _submit() async {
     FocusScope.of(context).unfocus();
 
-    final roleError = _validateRole(_role);
-    setState(() {
-      _roleError = roleError;
-    });
-
-    if (!_formKey.currentState!.validate() || roleError != null) return;
+    if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _loading = true;
@@ -277,8 +357,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
             : _fullNameCtrl.text.trim(),
         city: _cityCtrl.text.trim(),
         phone: _normalizedPhone(),
-        role: _role!,
-        adminKey: _role == 'ADMIN' ? _adminKeyCtrl.text.trim() : null,
       );
 
       if (!mounted) return;
@@ -340,26 +418,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           style: TextStyle(color: AppTheme.textMuted),
                         ),
                         const SizedBox(height: 18),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Nombre (opcional)',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Nombre (opcional)'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _fullNameCtrl,
                           textInputAction: TextInputAction.next,
                         ),
                         const SizedBox(height: 14),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Usuario',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Usuario'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _usernameCtrl,
@@ -368,13 +434,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Ciudad',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Ciudad'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _cityCtrl,
@@ -394,10 +454,25 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       ),
                                     ),
                                   )
-                                : IconButton(
-                                    tooltip: 'Usar mi ubicación actual',
-                                    icon: const Icon(Icons.my_location),
-                                    onPressed: _loading ? null : _detectCity,
+                                : SizedBox(
+                                    width: 96,
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        IconButton(
+                                          tooltip: 'Usar mi ubicación actual',
+                                          icon: const Icon(Icons.my_location),
+                                          onPressed:
+                                              _loading ? null : _detectCity,
+                                        ),
+                                        IconButton(
+                                          tooltip: 'Elegir en mapa',
+                                          icon: const Icon(Icons.map_outlined),
+                                          onPressed:
+                                              _loading ? null : _pickCityOnMap,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                           ),
                           validator: (value) =>
@@ -405,48 +480,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Rol',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _RoleSelector(
-                          value: _role,
-                          onChanged: _loading
-                              ? null
-                              : (v) {
-                                  setState(() {
-                                    _role = v;
-                                    _roleError = null;
-                                    _error = null;
-                                  });
-                                },
-                        ),
-                        if (_roleError != null) ...[
-                          const SizedBox(height: 6),
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              _roleError!,
-                              style: const TextStyle(
-                                color: Color(0xFF9F1239),
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 14),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Teléfono',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Teléfono'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _phoneCtrl,
@@ -469,37 +503,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           autovalidateMode: AutovalidateMode.onUserInteraction,
                         ),
                         const SizedBox(height: 14),
-                        if (_role == 'ADMIN') ...[
-                          const Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              'Código de administrador',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            controller: _adminKeyCtrl,
-                            textInputAction: TextInputAction.next,
-                            validator: (v) {
-                              if (_role != 'ADMIN') return null;
-                              return Validators.requiredField(
-                                v,
-                                field: 'Código admin',
-                              );
-                            },
-                            autovalidateMode:
-                                AutovalidateMode.onUserInteraction,
-                          ),
-                          const SizedBox(height: 14),
-                        ],
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Contraseña',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Contraseña'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _passwordCtrl,
@@ -535,13 +539,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           specialOk: _isPasswordHasSpecial,
                         ),
                         const SizedBox(height: 14),
-                        const Align(
-                          alignment: Alignment.centerLeft,
-                          child: Text(
-                            'Confirmar contraseña',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ),
+                        const AppFieldLabel('Confirmar contraseña'),
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: _confirmCtrl,
@@ -572,23 +570,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ),
                         const SizedBox(height: 16),
                         if (_error != null) ...[
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFFF1F2),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: const Color(0xFFFFCDD5),
-                              ),
-                            ),
-                            child: Text(
-                              _error!,
-                              style: const TextStyle(
-                                color: Color(0xFF9F1239),
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                          ErrorMessage(
+                            text: _error!,
+                            onDismiss: () => setState(() => _error = null),
                           ),
                           const SizedBox(height: 12),
                         ],
@@ -609,88 +593,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RoleSelector extends StatelessWidget {
-  final String? value;
-  final ValueChanged<String>? onChanged;
-
-  const _RoleSelector({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _RoleChip(
-            label: 'Usuario',
-            selected: value == 'USER',
-            onTap: onChanged == null ? null : () => onChanged!.call('USER'),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _RoleChip(
-            label: 'Admin',
-            selected: value == 'ADMIN',
-            onTap: onChanged == null ? null : () => onChanged!.call('ADMIN'),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _RoleChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _RoleChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: selected ? AppTheme.brandPink : const Color(0xFFE6E8F0),
-              width: selected ? 2 : 1,
-            ),
-            color: selected ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFF),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                selected ? Icons.check_circle : Icons.circle_outlined,
-                size: 18,
-                color: selected ? AppTheme.brandPink : const Color(0xFF94A3B8),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                label,
-                style: TextStyle(
-                  fontWeight: FontWeight.w900,
-                  color: selected ? AppTheme.textDark : const Color(0xFF475569),
-                ),
-              ),
-            ],
           ),
         ),
       ),
@@ -766,6 +668,128 @@ class _PasswordRuleItem extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CityMapPickerSheet extends StatefulWidget {
+  final LatLng initialCenter;
+
+  const _CityMapPickerSheet({required this.initialCenter});
+
+  @override
+  State<_CityMapPickerSheet> createState() => _CityMapPickerSheetState();
+}
+
+class _CityMapPickerSheetState extends State<_CityMapPickerSheet> {
+  late LatLng _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = widget.initialCenter;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Seleccionar ciudad en mapa',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+                color: AppTheme.textDark,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Toca el mapa para elegir la ubicación de tu ciudad.',
+              style: TextStyle(
+                color: AppTheme.textMuted,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 320,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: FlutterMap(
+                  options: MapOptions(
+                    initialCenter: widget.initialCenter,
+                    initialZoom: 12,
+                    onTap: (tapPosition, latLng) {
+                      setState(() {
+                        _selected = latLng;
+                      });
+                    },
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate:
+                          'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.flutter_application_3',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _selected,
+                          width: 44,
+                          height: 44,
+                          child: const Icon(
+                            Icons.location_pin,
+                            size: 40,
+                            color: Color(0xFFE11D48),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'Lat: ${_selected.latitude.toStringAsFixed(5)}  •  Lng: ${_selected.longitude.toStringAsFixed(5)}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF6B7280),
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancelar'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.pop(context, _selected),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Usar ubicación'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -50,12 +50,12 @@ class PerfumeOption {
         ?.toString()
         .trim();
     final gender = (json['gender'] ??
-        json['genero'] ??
-        json['sexo'] ??
-        json['target'] ??
-        json['category'])
-      ?.toString()
-      .trim();
+            json['genero'] ??
+            json['sexo'] ??
+            json['target'] ??
+            json['category'])
+        ?.toString()
+        .trim();
 
     final normalized = _normalizeImageUrl(imageUrl);
     if (name.isNotEmpty && normalized == null) {
@@ -83,52 +83,56 @@ class PerfumeOption {
   static String? _normalizeImageUrl(String? raw) {
     if (raw == null) return null;
 
-    final trimmed = raw.trim().replaceAll('\\', '/');
+    String trimmed = raw.trim().replaceAll('\\', '/');
     if (trimmed.isEmpty) return null;
     if (trimmed.startsWith('data:image/')) return trimmed;
+
+    // Decode first in case the API returned an already percent-encoded URL
+    // (e.g. "http%3A%2F%2F..." → "http://...").
+    // Without this step those URLs wouldn't match startsWith('http://') and
+    // would get treated as relative paths, causing double-encoding.
+    try {
+      final decoded = Uri.decodeFull(trimmed);
+      if (decoded != trimmed) trimmed = decoded;
+    } catch (_) {
+      // leave trimmed as-is if decoding fails
+    }
 
     final apiUri = Uri.tryParse(ApiClient.baseUrl);
     final appHost = apiUri?.host.isNotEmpty == true ? apiUri!.host : '10.0.2.2';
     final apiOrigin = apiUri?.origin ?? 'http://$appHost:3000';
 
     if (trimmed.startsWith('//')) {
-      return Uri.encodeFull('http:$trimmed');
-    }
-
-    if (!trimmed.startsWith('http://') &&
-        !trimmed.startsWith('https://') &&
-        !trimmed.startsWith('/')) {
-      final normalizedPath =
-          trimmed.startsWith('./') ? trimmed.substring(2) : trimmed;
-      final path = normalizedPath.startsWith('/')
-          ? normalizedPath.substring(1)
-          : normalizedPath;
-      return Uri.encodeFull('$apiOrigin/$path');
+      return 'http:$trimmed';
     }
 
     if (trimmed.startsWith('/')) {
-      return Uri.encodeFull('$apiOrigin$trimmed');
+      return '$apiOrigin$trimmed';
     }
 
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      final path = trimmed.startsWith('./') ? trimmed.substring(2) : trimmed;
+      return '$apiOrigin/${path.startsWith('/') ? path.substring(1) : path}';
+    }
+
+    // Absolute URL – replace localhost variants with the emulator-reachable host
     final uri = Uri.tryParse(trimmed);
-    if (uri == null) return Uri.encodeFull(trimmed);
+    if (uri == null) return trimmed;
 
     final host = uri.host.toLowerCase();
     if (host == '127.0.0.1' ||
         host == 'localhost' ||
         host == '10.0.2.2' ||
         host == '10.0.3.2') {
-      return Uri.encodeFull(
-        uri
-            .replace(
-              host: appHost,
-              port: uri.hasPort ? uri.port : null,
-            )
-            .toString(),
-      );
+      return uri
+          .replace(
+            host: appHost,
+            port: uri.hasPort ? uri.port : null,
+          )
+          .toString();
     }
 
-    return Uri.encodeFull(trimmed);
+    return trimmed;
   }
 }
 

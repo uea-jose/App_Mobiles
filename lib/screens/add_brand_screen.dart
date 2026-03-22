@@ -111,6 +111,28 @@ class _AddBrandScreenState extends State<AddBrandScreen> {
       return;
     }
 
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Confirmar guardado'),
+        content: const Text('¿Estás seguro de guardar esta casa fabricante?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sí, guardar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) {
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -124,18 +146,27 @@ class _AddBrandScreenState extends State<AddBrandScreen> {
 
       if (!mounted) return;
 
-      Navigator.pop(context, result.brand);
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.created
-                ? 'Casa fabricante creada: ${result.brand.name}'
-                : 'Casa fabricante ya existía: ${result.brand.name}',
+      if (!result.created) {
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Casa fabricante ya existe'),
+            content: Text(
+              'La casa fabricante "${result.brand.name}" ya existe y será utilizada.',
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Aceptar'),
+              ),
+            ],
           ),
-          backgroundColor: const Color(0xFF059669),
-        ),
-      );
+        );
+
+        if (!mounted) return;
+      }
+
+      Navigator.pop(context, result.brand);
     } catch (e) {
       if (!mounted) return;
 
@@ -164,6 +195,17 @@ class _AddBrandScreenState extends State<AddBrandScreen> {
           child: ListView(
             padding: const EdgeInsets.all(18),
             children: [
+              AppPageHeader(
+                icon: Icons.storefront_outlined,
+                title: 'Agregar casa fabricante',
+                subtitle: 'Crea una marca nueva o usa sugerencias de la API',
+                trailing: IconButton(
+                  tooltip: 'Cerrar',
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const SizedBox(height: 12),
               AppCard(
                 padding: const EdgeInsets.all(16),
                 child: Form(
@@ -188,11 +230,12 @@ class _AddBrandScreenState extends State<AddBrandScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
+                      const AppFieldLabel('Nombre *'),
+                      const SizedBox(height: 6),
                       TextFormField(
                         controller: _name,
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
-                          labelText: 'Nombre *',
                           hintText: 'Ej: Dior',
                         ),
                         onChanged: (_) => setState(() {}),
@@ -204,11 +247,12 @@ class _AddBrandScreenState extends State<AddBrandScreen> {
                         },
                       ),
                       const SizedBox(height: 10),
+                      const AppFieldLabel('País (opcional)'),
+                      const SizedBox(height: 6),
                       TextFormField(
                         controller: _country,
                         textCapitalization: TextCapitalization.words,
                         decoration: const InputDecoration(
-                          labelText: 'País (opcional)',
                           hintText: 'Ej: Francia',
                         ),
                       ),

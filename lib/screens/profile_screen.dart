@@ -266,6 +266,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      AppPageHeader(
+                        icon: Icons.person_outline,
+                        title: 'Mi perfil',
+                        subtitle: 'Actualiza tu identidad y foto de cuenta',
+                        trailing: IconButton(
+                          tooltip: 'Volver',
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       AppCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.center,
@@ -322,20 +333,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                             ),
                             const SizedBox(height: 10),
-                            TextField(
+                            const AppFieldLabel('Nombre completo'),
+                            const SizedBox(height: 6),
+                            TextFormField(
                               controller: _nameController,
                               textCapitalization: TextCapitalization.words,
                               decoration: const InputDecoration(
-                                labelText: 'Nombre completo',
-                                border: OutlineInputBorder(),
+                                hintText: 'Tu nombre y apellido',
                               ),
                             ),
                             const SizedBox(height: 10),
-                            TextField(
+                            const AppFieldLabel('Usuario'),
+                            const SizedBox(height: 6),
+                            TextFormField(
                               controller: _usernameController,
                               decoration: const InputDecoration(
-                                labelText: 'Usuario',
-                                border: OutlineInputBorder(),
+                                hintText: 'Nombre de usuario visible',
                               ),
                             ),
                             const SizedBox(height: 10),

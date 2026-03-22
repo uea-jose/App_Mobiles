@@ -324,6 +324,7 @@ class AppPageHeader extends StatelessWidget {
   final IconData icon;
   final String title;
   final String subtitle;
+  final Widget? leading;
   final Widget? trailing;
   final Gradient? gradient;
 
@@ -332,6 +333,7 @@ class AppPageHeader extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.subtitle,
+    this.leading,
     this.trailing,
     this.gradient,
   });
@@ -342,6 +344,7 @@ class AppPageHeader extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       child: Row(
         children: [
+          if (leading != null) ...[leading!, const SizedBox(width: 8)],
           Container(
             width: 46,
             height: 46,
@@ -433,6 +436,47 @@ class AppEmptyState extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class AppFieldLabel extends StatelessWidget {
+  final String text;
+
+  const AppFieldLabel(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontWeight: FontWeight.w700,
+          color: AppTheme.textDark,
+        ),
+      ),
+    );
+  }
+}
+
+class AppHintText extends StatelessWidget {
+  final String text;
+
+  const AppHintText(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: AppTheme.textMuted,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:dropdown_search/dropdown_search.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../models/brand.dart';
 import '../models/product_dto.dart';
@@ -9,6 +12,8 @@ import '../services/brand_services.dart';
 import '../services/perfume_options_service.dart';
 import '../services/products_service.dart';
 import '../ui/app_widgets.dart';
+
+enum _PerfumeInputMode { suggestions, manual }
 
 class ProductFormScreen extends StatefulWidget {
   final ProductDTO? product;
@@ -28,6 +33,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   final _formKey = GlobalKey<FormState>();
   late final FixedExtentScrollController _galleryController;
   final _perfumeSearchController = TextEditingController();
+  final _imageUrlInputController = TextEditingController();
+  final _imagePicker = ImagePicker();
 
   final _sku = TextEditingController();
   final _name = TextEditingController();
@@ -54,8 +61,50 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   String? _perfumeOptionsError;
   List<PerfumeOption> _perfumeOptions = [];
   PerfumeOption? _selectedPerfumeOption;
+  _PerfumeInputMode _perfumeInputMode = _PerfumeInputMode.suggestions;
 
   bool get _isEdit => widget.product != null;
+
+  void _showSnack(
+    String message, {
+    Color? backgroundColor,
+  }) {
+    if (!mounted) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final messenger = ScaffoldMessenger.maybeOf(context);
+      if (messenger == null) return;
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+        ),
+      );
+    });
+  }
+
+  Future<void> _showInfoDialog({
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Aceptar'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -73,13 +122,15 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     final p = widget.product;
     if (p == null) return;
 
-    _sku.text = p.sku ?? '';
+    _sku.text = p.sku?.trim() ?? '';
     _name.text = p.name;
     _price.text = p.price.toStringAsFixed(2);
     _stock.text = p.stock.toString();
     _minStock.text = p.minStock.toString();
     _description.text = p.description ?? '';
     _imageUrl.text = p.imageUrl ?? '';
+    _imageUrlInputController.text =
+        _isDataImageSource(p.imageUrl ?? '') ? '' : (p.imageUrl ?? '');
     _gender = p.gender;
   }
 
@@ -155,35 +206,158 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   }
 
   Future<void> _loadPerfumeOptions() async {
-    if (_isEdit) return;
-
     setState(() {
       _loadingPerfumeOptions = true;
       _perfumeOptionsError = null;
     });
 
+    List<PerfumeOption> externalOptions = const [];
+    List<PerfumeOption> localOptions = const [];
+    String? externalError;
+    String? localError;
+
     try {
-      final data = await _perfumeOptionsService.listOptions();
-
-      if (!mounted) return;
-
-      setState(() {
-        _perfumeOptions = data;
-        _galleryPageIndex = 0;
-        _selectedPerfumeOption = null;
-        _loadingPerfumeOptions = false;
-        _perfumeOptionsError = null;
-        _usingMockPerfumes = false;
-      });
+      externalOptions = await _perfumeOptionsService.listOptions();
     } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _perfumeOptionsError =
-            e.toString().replaceAll('Exception: ', '').trim();
-        _loadingPerfumeOptions = false;
-      });
+      externalError = e.toString().replaceAll('Exception: ', '').trim();
     }
+
+    try {
+      final localProducts = await _service.list();
+      localOptions = localProducts
+          .where((product) => product.name.trim().isNotEmpty)
+          .map(
+            (product) => PerfumeOption(
+              id: 'local-${product.id}',
+              name: product.name.trim(),
+              imageUrl: (product.imageUrl ?? '').trim().isEmpty
+                  ? null
+                  : product.imageUrl!.trim(),
+              sku: (product.sku ?? '').trim().isEmpty
+                  ? null
+                  : product.sku!.trim(),
+              description: (product.description ?? '').trim().isEmpty
+                  ? null
+                  : product.description!.trim(),
+              brand: product.brandName.trim(),
+              gender: product.gender,
+            ),
+          )
+          .toList();
+    } catch (e) {
+      localError = e.toString().replaceAll('Exception: ', '').trim();
+    }
+
+    if (!mounted) return;
+
+    final merged = _mergePerfumeOptions(externalOptions, localOptions);
+    final resolvedError = merged.isEmpty
+        ? (externalError ?? localError)
+        : (externalError != null && localError != null
+            ? '$externalError · $localError'
+            : null);
+
+    setState(() {
+      _perfumeOptions = merged;
+      _galleryPageIndex = 0;
+      _selectedPerfumeOption = null;
+      _loadingPerfumeOptions = false;
+      _perfumeOptionsError = resolvedError;
+      _usingMockPerfumes = false;
+    });
+  }
+
+  String _normalizePerfumeKeyPart(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  String _perfumeOptionKey(PerfumeOption option) {
+    final brand = _normalizePerfumeKeyPart(option.brand ?? '');
+    final name = _normalizePerfumeKeyPart(option.name);
+    return '$brand|$name';
+  }
+
+  String _productDuplicateKey({
+    required String brandId,
+    required String brandName,
+    required String name,
+  }) {
+    final normalizedBrandId = brandId.trim().toLowerCase();
+    final normalizedBrandName = _normalizePerfumeKeyPart(brandName);
+    final normalizedName = _normalizePerfumeKeyPart(name);
+    return '$normalizedBrandId|$normalizedBrandName|$normalizedName';
+  }
+
+  Future<ProductDTO?> _findDuplicateProduct({
+    required String brandId,
+    required String brandName,
+    required String name,
+  }) async {
+    final targetKey = _productDuplicateKey(
+      brandId: brandId,
+      brandName: brandName,
+      name: name,
+    );
+
+    final products = await _service.list();
+
+    for (final product in products) {
+      final productKey = _productDuplicateKey(
+        brandId: product.brandId,
+        brandName: product.brandName,
+        name: product.name,
+      );
+
+      if (productKey == targetKey) {
+        return product;
+      }
+    }
+
+    return null;
+  }
+
+  PerfumeOption _preferRicherPerfumeOption(
+    PerfumeOption current,
+    PerfumeOption candidate,
+  ) {
+    final currentScore = ((current.imageUrl ?? '').trim().isNotEmpty ? 1 : 0) +
+        ((current.description ?? '').trim().isNotEmpty ? 1 : 0) +
+        ((current.sku ?? '').trim().isNotEmpty ? 1 : 0) +
+        ((current.gender ?? '').trim().isNotEmpty ? 1 : 0);
+    final candidateScore =
+        ((candidate.imageUrl ?? '').trim().isNotEmpty ? 1 : 0) +
+            ((candidate.description ?? '').trim().isNotEmpty ? 1 : 0) +
+            ((candidate.sku ?? '').trim().isNotEmpty ? 1 : 0) +
+            ((candidate.gender ?? '').trim().isNotEmpty ? 1 : 0);
+
+    if (candidateScore > currentScore) return candidate;
+    return current;
+  }
+
+  List<PerfumeOption> _mergePerfumeOptions(
+    List<PerfumeOption> external,
+    List<PerfumeOption> local,
+  ) {
+    final merged = <String, PerfumeOption>{};
+
+    for (final option in [...external, ...local]) {
+      final key = _perfumeOptionKey(option);
+      if (key.trim() == '|') continue;
+
+      final existing = merged[key];
+      if (existing == null) {
+        merged[key] = option;
+      } else {
+        merged[key] = _preferRicherPerfumeOption(existing, option);
+      }
+    }
+
+    return merged.values.toList()
+      ..sort((a, b) {
+        final brandCompare = (a.brand ?? '').compareTo(b.brand ?? '');
+        if (brandCompare != 0) return brandCompare;
+        return a.name.compareTo(b.name);
+      });
   }
 
   void _loadMockPerfumeOptions() {
@@ -243,6 +417,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   void dispose() {
     _galleryController.dispose();
     _perfumeSearchController.dispose();
+    _imageUrlInputController.dispose();
     _sku.dispose();
     _name.dispose();
     _price.dispose();
@@ -300,7 +475,6 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   }
 
   List<PerfumeOption> get _filteredPerfumeOptions {
-    if (_isEdit) return _perfumeOptions;
     if (_selectedBrand == null) return const [];
 
     final selectedBrandName = _selectedBrand!.name.trim().toLowerCase();
@@ -325,7 +499,10 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       _name.text = option.name;
 
       if ((option.imageUrl ?? '').trim().isNotEmpty) {
-        _imageUrl.text = option.imageUrl!.trim();
+        final selectedImage = option.imageUrl!.trim();
+        _imageUrl.text = selectedImage;
+        _imageUrlInputController.text =
+            _isDataImageSource(selectedImage) ? '' : selectedImage;
       }
 
       if (_sku.text.trim().isEmpty && (option.sku ?? '').trim().isNotEmpty) {
@@ -348,8 +525,113 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     HapticFeedback.selectionClick();
   }
 
+  bool _isDataImageSource(String value) {
+    return value.trim().startsWith('data:image/');
+  }
+
+  String _guessMimeTypeFromPath(String path) {
+    final normalized = path.toLowerCase();
+    if (normalized.endsWith('.png')) return 'image/png';
+    if (normalized.endsWith('.webp')) return 'image/webp';
+    if (normalized.endsWith('.gif')) return 'image/gif';
+    return 'image/jpeg';
+  }
+
+  Future<void> _pickImageFromGallery() async {
+    try {
+      final picked = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1800,
+        imageQuality: 92,
+      );
+
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      if (bytes.isEmpty) return;
+
+      final mimeType = (picked.mimeType ?? '').trim().isNotEmpty
+          ? picked.mimeType!.trim()
+          : _guessMimeTypeFromPath(picked.path);
+      final encoded = base64Encode(bytes);
+      final dataUrl = 'data:$mimeType;base64,$encoded';
+
+      if (!mounted) return;
+      setState(() {
+        _imageUrl.text = dataUrl;
+        _imageUrlInputController.clear();
+        _selectedPerfumeOption = null;
+        _selectionMessage = 'Imagen local seleccionada';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      _showSnack(
+        'No se pudo seleccionar la imagen: ${e.toString().replaceAll('Exception: ', '').trim()}',
+      );
+    }
+  }
+
+  void _setImageFromUrlInput(String value) {
+    final normalized = value.trim();
+
+    setState(() {
+      _imageUrl.text = normalized;
+      _selectedPerfumeOption = null;
+      _selectionMessage =
+          normalized.isEmpty ? 'Imagen limpiada' : 'Imagen configurada por URL';
+    });
+  }
+
+  void _clearSelectedImage() {
+    setState(() {
+      _imageUrl.clear();
+      _imageUrlInputController.clear();
+      _selectedPerfumeOption = null;
+      _selectionMessage = 'Imagen eliminada';
+    });
+  }
+
+  String? _sanitizeImageUrlForSave(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+    if (value.startsWith('data:image/')) return value;
+
+    final uri = Uri.tryParse(value);
+    if (uri == null) return value;
+
+    final isExternalProxy = uri.path == '/api/external-image';
+    if (!isExternalProxy) return value;
+
+    final source = uri.queryParameters['url']?.trim() ?? '';
+    if (source.isEmpty) {
+      return null;
+    }
+
+    return Uri.decodeFull(source);
+  }
+
+  bool get _isManualPerfumeEntry =>
+      !_isEdit && _perfumeInputMode == _PerfumeInputMode.manual;
+
+  void _setPerfumeInputMode(_PerfumeInputMode mode) {
+    setState(() {
+      _perfumeInputMode = mode;
+      _selectedPerfumeOption =
+          mode == _PerfumeInputMode.manual ? null : _selectedPerfumeOption;
+      _galleryPageIndex = 0;
+      _selectionMessage = mode == _PerfumeInputMode.manual
+          ? 'Modo manual activado. Completa nombre y datos del producto.'
+          : null;
+    });
+
+    if (mode == _PerfumeInputMode.suggestions) {
+      _syncGalleryPosition(0);
+    }
+  }
+
   int get _currentStep {
     if (_selectedBrand == null) return 1;
+    if (_isManualPerfumeEntry) return 4;
     if (_selectedPerfumeOption == null) return 2;
     return 4;
   }
@@ -360,6 +642,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     final formKey = GlobalKey<FormState>();
     final nameController = TextEditingController();
     final countryController = TextEditingController();
+    String searchQuery = '';
     bool saving = false;
 
     final created = await showModalBottomSheet<Brand>(
@@ -369,131 +652,254 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       backgroundColor: Colors.white,
       builder: (modalContext) {
         return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
+          builder: (modalBodyContext, setModalState) {
+            return AnimatedPadding(
+              duration: const Duration(milliseconds: 120),
+              curve: Curves.easeOut,
               padding: EdgeInsets.fromLTRB(
                 16,
                 8,
                 16,
-                MediaQuery.of(context).viewInsets.bottom + 16,
+                MediaQuery.of(modalBodyContext).viewInsets.bottom + 16,
               ),
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Agregar casa fabricante',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: nameController,
-                      decoration: const InputDecoration(
-                        labelText: 'Nombre *',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (v) {
-                        if ((v ?? '').trim().isEmpty) {
-                          return 'Ingresa el nombre de la casa fabricante';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    TextFormField(
-                      controller: countryController,
-                      decoration: const InputDecoration(
-                        labelText: 'País (opcional)',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: saving
-                                ? null
-                                : () => Navigator.pop(modalContext),
-                            child: const Text('Cancelar'),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Agregar casa fabricante',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: FilledButton.icon(
-                            onPressed: saving
-                                ? null
-                                : () async {
-                                    if (!(formKey.currentState?.validate() ??
-                                        false)) {
-                                      return;
-                                    }
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: nameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Nombre *',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (v) {
+                          if ((v ?? '').trim().isEmpty) {
+                            return 'Ingresa el nombre de la casa fabricante';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: countryController,
+                        decoration: const InputDecoration(
+                          labelText: 'País (opcional)',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Casas existentes',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF374151),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        onChanged: (value) {
+                          setModalState(() {
+                            searchQuery = value;
+                          });
+                        },
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          labelText: 'Buscar casa fabricante',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Builder(
+                        builder: (_) {
+                          final normalizedQuery =
+                              searchQuery.trim().toLowerCase();
+                          final visibleBrands = _brands.where((b) {
+                            if (normalizedQuery.isEmpty) return true;
+                            final name = b.name.toLowerCase();
+                            final country = (b.country ?? '').toLowerCase();
+                            return name.contains(normalizedQuery) ||
+                                country.contains(normalizedQuery);
+                          }).toList()
+                            ..sort((a, b) => a.name
+                                .toLowerCase()
+                                .compareTo(b.name.toLowerCase()));
 
-                                    setModalState(() {
-                                      saving = true;
-                                    });
+                          if (visibleBrands.isEmpty) {
+                            return Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF9FAFB),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              child: Text(
+                                _brands.isEmpty
+                                    ? 'No hay casas cargadas todavía.'
+                                    : 'No se encontraron resultados.',
+                                style: const TextStyle(
+                                  color: Color(0xFF6B7280),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }
 
-                                    try {
-                                      final result = await _brandService
-                                          .findOrCreateByName(
-                                        name: nameController.text,
-                                        country: countryController.text,
-                                      );
+                          return Container(
+                            constraints: const BoxConstraints(maxHeight: 180),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: const Color(0xFFE5E7EB),
+                              ),
+                            ),
+                            child: ListView.separated(
+                              shrinkWrap: true,
+                              itemCount: visibleBrands.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (_, index) {
+                                final brand = visibleBrands[index];
+                                final subtitle =
+                                    (brand.country ?? '').trim().isEmpty
+                                        ? 'Seleccionar esta casa'
+                                        : brand.country!.trim();
 
-                                      if (!mounted || !modalContext.mounted) {
-                                        return;
-                                      }
-
-                                      Navigator.pop(modalContext, result.brand);
-
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            result.created
-                                                ? 'Casa fabricante creada'
-                                                : 'Casa fabricante ya existente seleccionada',
-                                          ),
-                                        ),
-                                      );
-                                    } catch (e) {
-                                      if (!mounted || !modalContext.mounted) {
+                                return ListTile(
+                                  dense: true,
+                                  title: Text(
+                                    brand.name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  subtitle: Text(subtitle),
+                                  trailing: const Icon(
+                                    Icons.arrow_forward_ios_rounded,
+                                    size: 14,
+                                  ),
+                                  onTap: saving
+                                      ? null
+                                      : () =>
+                                          Navigator.pop(modalContext, brand),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: saving
+                                  ? null
+                                  : () => Navigator.pop(modalContext),
+                              child: const Text('Cancelar'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: saving
+                                  ? null
+                                  : () async {
+                                      if (!(formKey.currentState?.validate() ??
+                                          false)) {
                                         return;
                                       }
 
                                       setModalState(() {
-                                        saving = false;
+                                        saving = true;
                                       });
 
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            e
-                                                .toString()
-                                                .replaceAll('Exception: ', '')
-                                                .trim(),
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  },
-                            icon: const Icon(Icons.save_outlined),
-                            label: Text(
-                              saving ? 'Guardando...' : 'Guardar',
+                                      try {
+                                        final result = await _brandService
+                                            .findOrCreateByName(
+                                          name: nameController.text,
+                                          country: countryController.text,
+                                        );
+
+                                        if (!mounted || !modalContext.mounted) {
+                                          return;
+                                        }
+
+                                        if (!result.created) {
+                                          await showDialog<void>(
+                                            context: modalContext,
+                                            builder: (_) => AlertDialog(
+                                              title: const Text(
+                                                'Casa fabricante ya existe',
+                                              ),
+                                              content: Text(
+                                                'La casa fabricante "${result.brand.name}" ya existe y será utilizada.',
+                                              ),
+                                              actions: [
+                                                FilledButton(
+                                                  onPressed: () =>
+                                                      Navigator.pop(_, null),
+                                                  child: const Text('Aceptar'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+
+                                          if (!mounted ||
+                                              !modalContext.mounted) {
+                                            return;
+                                          }
+                                        }
+
+                                        Navigator.pop(
+                                            modalContext, result.brand);
+                                      } catch (e) {
+                                        if (!mounted || !modalContext.mounted) {
+                                          return;
+                                        }
+
+                                        setModalState(() {
+                                          saving = false;
+                                        });
+
+                                        _showSnack(
+                                          e
+                                              .toString()
+                                              .replaceAll('Exception: ', '')
+                                              .trim(),
+                                        );
+                                      }
+                                    },
+                              icon: const Icon(Icons.save_outlined),
+                              label: Text(
+                                saving ? 'Guardando...' : 'Guardar',
+                              ),
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -502,12 +908,14 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       },
     );
 
-    nameController.dispose();
-    countryController.dispose();
-
     if (created == null || !mounted) return;
 
     await _loadBrands(preferredBrandId: created.id);
+
+    if (!mounted) return;
+    _showSnack(
+      'Casa fabricante "${created.name}" lista para usar',
+    );
   }
 
   String _apiHost() {
@@ -535,38 +943,42 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
   }
 
   String? _normalizeSingleImageUrl(String raw) {
-    final trimmed = raw.trim().replaceAll('\\', '/');
+    var trimmed = raw.trim().replaceAll('\\', '/');
     if (trimmed.isEmpty) return null;
     if (trimmed.startsWith('data:image/')) return trimmed;
+
+    try {
+      final decoded = Uri.decodeFull(trimmed);
+      if (decoded != trimmed) {
+        trimmed = decoded;
+      }
+    } catch (_) {}
 
     final apiOrigin = _apiOrigin();
     final apiHost = _apiHost();
 
     if (trimmed.startsWith('/')) {
-      return Uri.encodeFull('$apiOrigin$trimmed');
+      return '$apiOrigin$trimmed';
     }
 
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       final path = trimmed.startsWith('./') ? trimmed.substring(2) : trimmed;
-      return Uri.encodeFull(
-          '$apiOrigin/${path.startsWith('/') ? path.substring(1) : path}');
+      return '$apiOrigin/${path.startsWith('/') ? path.substring(1) : path}';
     }
 
     final uri = Uri.tryParse(trimmed);
-    if (uri == null) return Uri.encodeFull(trimmed);
+    if (uri == null) return trimmed;
 
     if (_isLocalOnlyHost(uri.host)) {
-      return Uri.encodeFull(
-        uri
-            .replace(
-              host: apiHost,
-              port: uri.hasPort ? uri.port : null,
-            )
-            .toString(),
-      );
+      return uri
+          .replace(
+            host: apiHost,
+            port: uri.hasPort ? uri.port : null,
+          )
+          .toString();
     }
 
-    return Uri.encodeFull(trimmed);
+    return trimmed;
   }
 
   List<String> _imageUrlCandidates(String raw) {
@@ -593,7 +1005,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     }
 
     if (normalized.startsWith('/static/')) {
-      final extra = Uri.encodeFull('$apiOrigin$normalized');
+      final extra = '$apiOrigin$normalized';
       if (!candidates.contains(extra)) {
         candidates.add(extra);
       }
@@ -710,11 +1122,49 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _error = null);
 
-    if (!(_formKey.currentState?.validate() ?? false)) return;
+    if (!(_formKey.currentState?.validate() ?? false)) {
+      if (mounted) {
+        _showSnack(
+          'Revisa los campos obligatorios antes de guardar',
+          backgroundColor: const Color(0xFFB91C1C),
+        );
+      }
+      return;
+    }
 
     if (_selectedBrand == null) {
       setState(() => _error = 'Selecciona una casa fabricante');
+      if (mounted) {
+        _showSnack(
+          'Selecciona una casa fabricante',
+          backgroundColor: const Color(0xFFB91C1C),
+        );
+      }
       return;
+    }
+
+    if (_isEdit) {
+      final confirmUpdate = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Confirmar actualización'),
+          content: const Text('¿Estás seguro de actualizar este producto?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Sí, actualizar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmUpdate != true) {
+        return;
+      }
     }
 
     setState(() => _saving = true);
@@ -723,8 +1173,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       final sku = _sku.text.trim().isEmpty ? null : _sku.text.trim();
       final description =
           _description.text.trim().isEmpty ? null : _description.text.trim();
-      final imageUrl =
-          _imageUrl.text.trim().isEmpty ? null : _imageUrl.text.trim();
+      final imageUrl = _sanitizeImageUrlForSave(_imageUrl.text);
       final name = _name.text.trim();
       final price = _toDouble(_price.text);
       final stock = _toInt(_stock.text);
@@ -742,15 +1191,39 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           description: description,
           price: price,
           imageUrl: imageUrl,
+          stock: stock,
+          minStock: minStock,
           isActive: true,
         );
 
-        await _service.setInventory(
-          productId: product.id,
-          stock: stock,
-          minStock: minStock,
-        );
+        try {
+          await _service.setInventory(
+            productId: product.id,
+            stock: stock,
+            minStock: minStock,
+          );
+        } catch (_) {
+          // En algunos backends no existe endpoint dedicado de inventario.
+          // Ya enviamos stock/minStock en update, así que no bloqueamos el guardado.
+        }
       } else {
+        final duplicate = await _findDuplicateProduct(
+          brandId: _selectedBrand!.id,
+          brandName: _selectedBrand!.name,
+          name: name,
+        );
+
+        if (duplicate != null) {
+          if (!mounted) return;
+
+          await _showInfoDialog(
+            title: 'Perfume ya existe',
+            message:
+                'El perfume "${duplicate.name}" ya existe en la casa fabricante "${duplicate.brandName}".',
+          );
+          return;
+        }
+
         await _service.create(
           sku: sku,
           name: name,
@@ -765,13 +1238,23 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       }
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      final message = _isEdit
+          ? 'Producto actualizado exitosamente'
+          : 'Producto guardado exitosamente';
+      Navigator.pop(context, message);
     } catch (e) {
       if (!mounted) return;
 
+      final errorMsg = e.toString().replaceAll('Exception: ', '').trim();
+
       setState(() {
-        _error = e.toString().replaceAll('Exception: ', '');
+        _error = errorMsg;
       });
+
+      _showSnack(
+        errorMsg.isEmpty ? 'No se pudo guardar el producto' : errorMsg,
+        backgroundColor: const Color(0xFFB91C1C),
+      );
     } finally {
       if (mounted) {
         setState(() => _saving = false);
@@ -1134,6 +1617,343 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     );
   }
 
+  Widget _buildImagePreviewBox({
+    required String raw,
+    required List<String> previewUrls,
+  }) {
+    final trimmedRaw = raw.trim();
+
+    if (_isDataImageSource(trimmedRaw)) {
+      final separator = trimmedRaw.indexOf(',');
+      if (separator > -1 && separator < trimmedRaw.length - 1) {
+        try {
+          final bytes = base64Decode(trimmedRaw.substring(separator + 1));
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              filterQuality: FilterQuality.high,
+              width: double.infinity,
+              height: 220,
+            ),
+          );
+        } catch (_) {}
+      }
+    }
+
+    if (previewUrls.isNotEmpty) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: _ResilientNetworkImage(
+          key: ValueKey('edit-image-preview-${previewUrls.first}'),
+          imageUrls: previewUrls,
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          loading: const Center(child: CircularProgressIndicator()),
+          fallback: const Center(
+            child: Icon(
+              Icons.image_not_supported_outlined,
+              size: 64,
+              color: Color(0xFFD1D5DB),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return const Center(
+      child: Icon(
+        Icons.local_mall_outlined,
+        size: 64,
+        color: Color(0xFFD1D5DB),
+      ),
+    );
+  }
+
+  Widget _buildEditImageSection({
+    required List<PerfumeOption> visiblePerfumeOptions,
+    required String selectedImageRaw,
+    required List<String> selectedPreviewUrls,
+    bool showSuggestions = true,
+    bool showMainPreview = true,
+    String helperText = 'Puedes elegir por sugerencia, URL o galería local',
+  }) {
+    final suggestions = visiblePerfumeOptions.take(10).toList();
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBFD),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFACFE0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.image_outlined, size: 18, color: Color(0xFFFF4D8D)),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Imagen del producto',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            helperText,
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontWeight: FontWeight.w600,
+              fontSize: 12,
+            ),
+          ),
+          if (showMainPreview) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              height: 220,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE5E7EB)),
+              ),
+              child: _buildImagePreviewBox(
+                raw: selectedImageRaw,
+                previewUrls: selectedPreviewUrls,
+              ),
+            ),
+            const SizedBox(height: 10),
+          ] else ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  _imageUrl.text.trim().isEmpty
+                      ? Icons.image_not_supported_outlined
+                      : Icons.check_circle_outline,
+                  size: 16,
+                  color: _imageUrl.text.trim().isEmpty
+                      ? const Color(0xFF9CA3AF)
+                      : const Color(0xFF16A34A),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  _imageUrl.text.trim().isEmpty
+                      ? 'Sin imagen seleccionada'
+                      : 'Imagen lista para vista previa',
+                  style: const TextStyle(
+                    color: Color(0xFF6B7280),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saving ? null : _pickImageFromGallery,
+                  icon: const Icon(Icons.photo_library_outlined),
+                  label: const Text('Galería'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saving ? null : _clearSelectedImage,
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Limpiar'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _imageUrlInputController,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            decoration: const InputDecoration(
+              hintText: 'https://... o /static/images/...',
+            ),
+            keyboardType: TextInputType.url,
+            onChanged: _setImageFromUrlInput,
+          ),
+          if (_isDataImageSource(_imageUrl.text)) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Imagen local seleccionada y lista para guardar.',
+              style: TextStyle(
+                color: Color(0xFF16A34A),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          if (showSuggestions && suggestions.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Sugerencias de la marca',
+              style: TextStyle(
+                color: Color(0xFF374151),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 132,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: suggestions.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, index) {
+                  final option = suggestions[index];
+                  final optionUrls = _imageUrlCandidates(option.imageUrl ?? '');
+                  final isSelected = _selectedPerfumeOption?.id == option.id;
+
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: _saving ? null : () => _applyPerfumeOption(option),
+                    child: Container(
+                      width: 100,
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: isSelected
+                              ? const Color(0xFFFF4D8D)
+                              : const Color(0xFFE5E7EB),
+                          width: isSelected ? 1.6 : 1,
+                        ),
+                      ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: optionUrls.isNotEmpty
+                                  ? _ResilientNetworkImage(
+                                      imageUrls: optionUrls,
+                                      fit: BoxFit.cover,
+                                      loading: const Center(
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        ),
+                                      ),
+                                      fallback: const Icon(
+                                        Icons.image_not_supported_outlined,
+                                        size: 20,
+                                        color: Color(0xFF9CA3AF),
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.image_not_supported_outlined,
+                                      size: 20,
+                                      color: Color(0xFF9CA3AF),
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            option.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF374151),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCreatePerfumeStepContent(
+      List<PerfumeOption> visiblePerfumeOptions) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ChoiceChip(
+              selected: _perfumeInputMode == _PerfumeInputMode.suggestions,
+              label: const Text('Sugerencias'),
+              onSelected: _saving
+                  ? null
+                  : (_) => _setPerfumeInputMode(_PerfumeInputMode.suggestions),
+            ),
+            ChoiceChip(
+              selected: _perfumeInputMode == _PerfumeInputMode.manual,
+              label: const Text('Manual'),
+              onSelected: _saving
+                  ? null
+                  : (_) => _setPerfumeInputMode(_PerfumeInputMode.manual),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_perfumeInputMode == _PerfumeInputMode.suggestions)
+          _buildPerfumeStepContent(visiblePerfumeOptions)
+        else ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: const Text(
+              'Vas a ingresar el perfume manualmente. En este modo puedes cargar imagen local o por URL.',
+              style: TextStyle(
+                color: Color(0xFF6B7280),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _buildEditImageSection(
+            visiblePerfumeOptions: visiblePerfumeOptions,
+            selectedImageRaw: _imageUrl.text,
+            selectedPreviewUrls: _imageUrlCandidates(_imageUrl.text),
+            showSuggestions: false,
+            showMainPreview: false,
+            helperText:
+                'Sube una imagen local o pega una URL para el perfume manual',
+          ),
+        ],
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final imagePreviewUrl =
@@ -1154,6 +1974,19 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
           child: ListView(
             padding: const EdgeInsets.all(18),
             children: [
+              AppPageHeader(
+                icon: _isEdit ? Icons.edit_outlined : Icons.add_box_outlined,
+                title: _isEdit ? 'Editar producto' : 'Ingresar producto',
+                subtitle: _isEdit
+                    ? 'Actualiza datos, imagen y stock del perfume'
+                    : 'Completa el flujo para crear un nuevo perfume',
+                trailing: IconButton(
+                  tooltip: 'Cerrar',
+                  onPressed: _saving ? null : () => Navigator.pop(context),
+                  icon: const Icon(Icons.close),
+                ),
+              ),
+              const SizedBox(height: 12),
               if (_error != null) ...[
                 AppCard(
                   padding: const EdgeInsets.all(14),
@@ -1312,16 +2145,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                           title: 'Seleccionar perfume',
                           subtitle:
                               'Carrusel vertical filtrado por marca seleccionada',
-                          child:
-                              _buildPerfumeStepContent(visiblePerfumeOptions),
+                          child: _buildCreatePerfumeStepContent(
+                            visiblePerfumeOptions,
+                          ),
                         ),
                         const SizedBox(height: 12),
                         _buildStepContainer(
                           step: 3,
                           enabled: true,
                           title: 'Vista previa',
-                          subtitle:
-                              'Imagen y nombre se actualizan automáticamente',
+                          subtitle: _isManualPerfumeEntry
+                              ? 'Imagen y nombre según entrada manual'
+                              : 'Imagen y nombre se actualizan automáticamente',
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -1372,7 +2207,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                               const SizedBox(height: 10),
                               Text(
                                 _selectedPerfumeOption?.name ??
-                                    'Sin perfume seleccionado',
+                                    (_name.text.trim().isEmpty
+                                        ? 'Sin perfume seleccionado'
+                                        : _name.text.trim()),
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   fontSize: 16,
@@ -1464,6 +2301,9 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 onChanged: (Brand? b) {
                                   setState(() {
                                     _selectedBrand = b;
+                                    _perfumeSearch = '';
+                                    _perfumeSearchController.clear();
+                                    _selectedPerfumeOption = null;
                                   });
                                 },
                                 validator: (Brand? b) {
@@ -1488,11 +2328,34 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                 ],
                               ),
                               const SizedBox(height: 10),
+                              TextField(
+                                controller: _perfumeSearchController,
+                                onChanged: (value) {
+                                  setState(() {
+                                    _perfumeSearch = value;
+                                  });
+                                },
+                                decoration: const InputDecoration(
+                                  prefixIcon: Icon(Icons.search),
+                                  labelText: 'Buscar sugerencia por nombre',
+                                ),
+                              ),
+                              const SizedBox(height: 10),
+                              _buildEditImageSection(
+                                visiblePerfumeOptions: visiblePerfumeOptions,
+                                selectedImageRaw: selectedImageRaw,
+                                selectedPreviewUrls: selectedPreviewUrls,
+                              ),
+                              const SizedBox(height: 10),
                             ],
+                            const AppFieldLabel('Nombre del producto *'),
+                            const SizedBox(height: 6),
                             TextFormField(
                               controller: _name,
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
                               decoration: const InputDecoration(
-                                labelText: 'Nombre del producto *',
+                                hintText: 'Ej: Sauvage Elixir',
                               ),
                               validator: (v) {
                                 if (v == null || v.trim().isEmpty) {
@@ -1502,14 +2365,18 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                               },
                             ),
                             const SizedBox(height: 10),
+                            const AppFieldLabel('Precio *'),
+                            const SizedBox(height: 6),
                             TextFormField(
                               controller: _price,
                               keyboardType:
                                   const TextInputType.numberWithOptions(
                                 decimal: true,
                               ),
+                              autovalidateMode:
+                                  AutovalidateMode.onUserInteraction,
                               decoration: const InputDecoration(
-                                labelText: 'Precio *',
+                                hintText: 'Ej: 85.50',
                               ),
                               validator: (v) {
                                 final p = _toDouble(v ?? '');
@@ -1518,19 +2385,20 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                               },
                             ),
                             const SizedBox(height: 10),
+                            const AppFieldLabel('SKU (opcional)'),
+                            const SizedBox(height: 6),
                             TextFormField(
                               controller: _sku,
                               decoration: const InputDecoration(
-                                labelText: 'SKU (opcional)',
                                 hintText: 'Ej: DIOR-SAU-100',
                               ),
                             ),
                             const SizedBox(height: 10),
+                            const AppFieldLabel('Género (opcional)'),
+                            const SizedBox(height: 6),
                             DropdownButtonFormField<String>(
                               initialValue: _gender,
-                              decoration: const InputDecoration(
-                                labelText: 'Género (opcional)',
-                              ),
+                              decoration: const InputDecoration(),
                               items: const [
                                 DropdownMenuItem(
                                   value: 'FEMENINO',
@@ -1548,20 +2416,26 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                               onChanged: (v) => setState(() => _gender = v),
                             ),
                             const SizedBox(height: 10),
+                            const AppFieldLabel('Descripción (opcional)'),
+                            const SizedBox(height: 6),
                             TextFormField(
                               controller: _description,
                               maxLines: 3,
                               decoration: const InputDecoration(
-                                labelText: 'Descripción (opcional)',
+                                hintText: 'Notas del perfume y detalles útiles',
                               ),
                             ),
                             const SizedBox(height: 12),
+                            const AppFieldLabel('Inventario'),
+                            const SizedBox(height: 6),
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
                                     controller: _stock,
                                     keyboardType: TextInputType.number,
+                                    autovalidateMode:
+                                        AutovalidateMode.onUserInteraction,
                                     decoration: const InputDecoration(
                                       labelText: 'Stock',
                                     ),
@@ -1577,6 +2451,8 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
                                   child: TextFormField(
                                     controller: _minStock,
                                     keyboardType: TextInputType.number,
+                                    autovalidateMode:
+                                        AutovalidateMode.onUserInteraction,
                                     decoration: const InputDecoration(
                                       labelText: 'Stock mínimo',
                                     ),
