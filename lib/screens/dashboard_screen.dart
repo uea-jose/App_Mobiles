@@ -157,11 +157,13 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           },
                         ),
                         _ModuleTile(
-                          title: 'Ventas',
-                          subtitle: 'Órdenes',
+                          title: 'Ventas & Stock',
+                          subtitle: 'Reportes',
                           icon: Icons.receipt_long_outlined,
                           gradient: const LinearGradient(
-                            colors: [Color(0xFF06B6D4), Color(0xFF10B981)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF0A0A0A), Color(0xFF1E1B4B)],
                           ),
                           onTap: () {
                             Navigator.push(
@@ -174,10 +176,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         _ModuleTile(
                           title: 'Clientes',
-                          subtitle: 'CRM básico',
+                          subtitle: 'Reportes',
                           icon: Icons.people_outline,
                           gradient: const LinearGradient(
-                            colors: [Color(0xFFFFB703), Color(0xFFFB7185)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFF064E3B), Color(0xFF0D9488)],
                           ),
                           onTap: () {
                             Navigator.push(

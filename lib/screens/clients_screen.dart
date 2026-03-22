@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../services/clients_service.dart';
@@ -91,7 +93,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
   int get _totalPurchases => _sales.length;
 
-  List<_ClientPurchaseMetric> get _topClients {
+    List<_ClientPurchaseMetric> get _topClients {
     final totals = <String, _ClientPurchaseMetric>{};
 
     for (final sale in _sales) {
@@ -269,40 +271,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   ),
                 ] else ...[
                   if (topClients.isNotEmpty) ...[
-                    AppCard(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Top de clientes que más compran',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: AppTheme.textDark,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            'Top 5 por número de compras',
-                            style: TextStyle(
-                              color: AppTheme.textMuted,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ...topClients.take(5).toList().asMap().entries.map(
-                                (entry) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _TopClientTile(
-                                    rank: entry.key + 1,
-                                    item: entry.value,
-                                  ),
-                                ),
-                              ),
-                        ],
-                      ),
-                    ),
+                    _TopClientsBarChart(items: topClients.take(5).toList()),
                     const SizedBox(height: 14),
                   ],
                   ...visibleClients.map((client) => Padding(
@@ -470,59 +439,146 @@ class _StatPill extends StatelessWidget {
   }
 }
 
-class _TopClientTile extends StatelessWidget {
-  final int rank;
-  final _ClientPurchaseMetric item;
+class _TopClientsBarChart extends StatelessWidget {
+  final List<_ClientPurchaseMetric> items;
 
-  const _TopClientTile({
-    required this.rank,
-    required this.item,
-  });
+  const _TopClientsBarChart({required this.items});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFF1F2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            '$rank',
-            style: const TextStyle(
-              color: Color(0xFF9F1239),
+    final maxPurchases = math.max(
+      1,
+      items.fold<int>(0, (maxValue, item) => math.max(maxValue, item.purchases)),
+    );
+
+    const barColors = [
+      Color(0xFF315DDB),
+      Color(0xFFD3D7E2),
+      Color(0xFF2B7A6C),
+      Color(0xFFC33DA7),
+      Color(0xFF7A8397),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF070B1F),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFF1A2443)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Top de clientes que más compran',
+            style: TextStyle(
+              fontSize: 16,
               fontWeight: FontWeight.w900,
+              color: Color(0xFFE5E7EB),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                item.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.textDark,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${item.purchases} compras',
-                style: const TextStyle(
-                  color: AppTheme.textMuted,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          const SizedBox(height: 6),
+          const Text(
+            'Top 5 por número de compras',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontWeight: FontWeight.w600,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 14),
+          ...items.asMap().entries.map((entry) {
+            final index = entry.key;
+            final item = entry.value;
+            final ratio = (item.purchases / maxPurchases).clamp(0.0, 1.0);
+            final barColor = barColors[index % barColors.length];
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final available = constraints.maxWidth;
+                  final nameWidth = (available * 0.34).clamp(120.0, 170.0);
+                  final valueWidth = 28.0;
+                    final barWidth =
+                      math.max(available - nameWidth - valueWidth - 12, 80)
+                        .toDouble();
+
+                  return Row(
+                    children: [
+                      SizedBox(
+                        width: nameWidth,
+                        child: Text(
+                          item.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFFA8B3D0),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.2,
+                          ),
+                        ),
+                      ),
+                      SizedBox(
+                        width: barWidth,
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Positioned.fill(
+                              child: Row(
+                                children: List.generate(
+                                  4,
+                                  (i) => Expanded(
+                                    child: Align(
+                                      alignment: Alignment.centerRight,
+                                      child: Container(
+                                        width: 1,
+                                        color: const Color(0xFF27335A),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Container(
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF141B38),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            FractionallySizedBox(
+                              widthFactor: ratio,
+                              child: Container(
+                                height: 20,
+                                decoration: BoxDecoration(
+                                  color: barColor,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: valueWidth,
+                        child: Text(
+                          '${item.purchases}',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: Color(0xFFCFD8ED),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
