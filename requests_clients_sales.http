@@ -1,0 +1,76 @@
+@baseUrl = http://localhost:3000
+@username = admin
+@password = CAMBIA_ESTA_CLAVE
+
+### 1) Login (copia el token de la respuesta)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "{{username}}",
+  "password": "{{password}}"
+}
+
+### 2) Clients (sin prefijo /api)
+GET {{baseUrl}}/clients
+Authorization: Bearer {{token}}
+
+### 3) Clients (con prefijo /api)
+GET {{baseUrl}}/api/clients
+Authorization: Bearer {{token}}
+
+### 4) Sales (sin prefijo /api)
+GET {{baseUrl}}/sales
+Authorization: Bearer {{token}}
+
+### 5) Sales (con prefijo /api)
+GET {{baseUrl}}/api/sales
+Authorization: Bearer {{token}}
+
+### 6) Sale by id (sin prefijo /api)
+# Reemplaza {{saleId}} por un id real de venta
+@saleId = REEMPLAZA_CON_SALE_ID
+GET {{baseUrl}}/sales/{{saleId}}
+Authorization: Bearer {{token}}
+
+### 7) Sale by id (con prefijo /api)
+GET {{baseUrl}}/api/sales/{{saleId}}
+Authorization: Bearer {{token}}
+
+### 8) Create Sale (sin prefijo /api) - AUTOMÁTICAMENTE ACTUALIZA STOCK
+# Reemplaza {{clientId}} y {{productId}} con IDs reales
+@clientId = REEMPLAZA_CON_CLIENT_ID
+@productId = REEMPLAZA_CON_PRODUCT_ID
+POST {{baseUrl}}/sales
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "clientId": "{{clientId}}",
+  "items": [
+    {
+      "productId": "{{productId}}",
+      "quantity": 2
+    }
+  ]
+}
+
+### 9) Create Sale (con prefijo /api) - AUTOMÁTICAMENTE ACTUALIZA STOCK
+# Múltiples productos en una misma venta
+POST {{baseUrl}}/api/sales
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "clientId": "{{clientId}}",
+  "items": [
+    {
+      "productId": "{{productId}}",
+      "quantity": 1
+    },
+    {
+      "productId": "OTRO_PRODUCT_ID",
+      "quantity": 3
+    }
+  ]
+}
