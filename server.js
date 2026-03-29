@@ -159,6 +159,34 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true, app: "Essenza Backend" });
 });
 
+//------------------ruta nube--------------
+app.get("/test-db", async (_req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+    return res.json({
+      ok: true,
+      now: result.rows[0].now,
+    });
+  } catch (e) {
+    console.error("TEST DB ERROR:", e);
+    return res.status(500).json({
+      ok: false,
+      message: e.message,
+    });
+  }
+});
+
+app.get("/test-login", async (req, res) => {
+  const bcrypt = require("bcrypt");
+
+  const user = await pool.query(
+    "SELECT * FROM users WHERE username = $1",
+    ["admin"]
+  );
+
+  res.json(user.rows);
+});
+
 // Proxy de imágenes externas para Flutter / móvil / emulador
 app.get("/api/external-image", async (req, res) => {
   try {
